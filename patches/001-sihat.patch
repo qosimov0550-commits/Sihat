@@ -1,0 +1,1087 @@
+diff -ruN a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -5,6 +5,14 @@
+     <uses-permission android:name="android.permission.CAMERA" />
+     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+     <uses-permission android:name="android.permission.VIBRATE" />
++    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
++
++    <!-- Android 11+: telefondagi ovoz (TTS) dvigatelini ko'rish uchun -->
++    <queries>
++        <intent>
++            <action android:name="android.intent.action.TTS_SERVICE" />
++        </intent>
++    </queries>
+ 
+     <uses-feature android:name="android.hardware.camera" android:required="false" />
+     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
+@@ -26,5 +34,11 @@
+                 <category android:name="android.intent.category.LAUNCHER" />
+             </intent-filter>
+         </activity>
++
++        <!-- Fonda har ~15 daqiqada qadamlarni saqlash -->
++        <service
++            android:name=".StepJob"
++            android:exported="false"
++            android:permission="android.permission.BIND_JOB_SERVICE" />
+     </application>
+ </manifest>
+diff -ruN a/app/src/main/assets/www/anim.js b/app/src/main/assets/www/anim.js
+--- a/app/src/main/assets/www/anim.js
++++ b/app/src/main/assets/www/anim.js
+@@ -0,0 +1,181 @@
++/* Sihat — mashqlar uchun animatsiyali odamcha (o'zimizning chizma, SVG).
++ * Har bir mashq bir nechta "holat"dan iborat; holatlar orasida silliq o'tiladi.
++ * Bo'g'inlar: h bosh, n yelka, p tos, le/lh uzoq qo'l (tirsak/kaft), re/rh yaqin qo'l,
++ * lk/lf uzoq oyoq (tizza/tovon), rk/rf yaqin oyoq. Koordinatalar 200x200 maydonda, pol y=185.
++ */
++(function () {
++  var J = ['h', 'n', 'p', 'le', 'lh', 're', 'rh', 'lk', 'lf', 'rk', 'rf'];
++
++  function P(o) { return o; }
++  function mirror(o) { // old ko'rinishda chap-o'ngni almashtirish
++    var r = {}; J.forEach(function (k) { r[k] = [200 - o[k][0], o[k][1]]; });
++    var t;
++    t = r.le; r.le = r.re; r.re = t; t = r.lh; r.lh = r.rh; r.rh = t;
++    t = r.lk; r.lk = r.rk; r.rk = t; t = r.lf; r.lf = r.rf; r.rf = t;
++    return r;
++  }
++  function both(o) { // yon ko'rinishda ikkala qo'l/oyoq bir xil
++    var r = {}; for (var k in o) r[k] = o[k];
++    if (o.e) { r.le = r.re = o.e; r.lh = r.rh = o.a; }
++    if (o.k) { r.lk = r.rk = o.k; r.lf = r.rf = o.f; }
++    return r;
++  }
++
++  // Old ko'rinish, tik turish
++  var FRONT = P({ h: [100, 36], n: [100, 58], p: [100, 110], le: [88, 84], lh: [84, 108], re: [112, 84], rh: [116, 108],
++    lk: [93, 148], lf: [91, 185], rk: [107, 148], rf: [109, 185] });
++  // Yon ko'rinish (o'ngga qarab), tik turish
++  var SIDE = both({ h: [102, 36], n: [100, 58], p: [100, 110], e: [101, 84], a: [103, 108], k: [101, 148], f: [99, 185] });
++  SIDE.lf = [96, 185];
++
++  // Planka (kaftlarda), yon ko'rinish
++  function handPlank(nY, pY, kY, headDy) {
++    return { h: [161, nY - 7 + (headDy || 0)], n: [145, nY], p: [95, pY],
++      le: [143, (nY + 185) / 2], lh: [143, 185], re: [146, (nY + 185) / 2], rh: [146, 185],
++      lk: [67, kY], lf: [40, 183], rk: [68, kY], rf: [41, 183] };
++  }
++
++  var EX = {
++    jumping: { dur: 420, poses: [FRONT,
++      { h: [100, 32], n: [100, 54], p: [100, 106], le: [80, 40], lh: [68, 18], re: [120, 40], rh: [132, 18],
++        lk: [82, 145], lf: [70, 183], rk: [118, 145], rf: [130, 183] }] },
++
++    march: { dur: 450, poses: (function () {
++      var a = { h: [100, 36], n: [100, 58], p: [100, 110], le: [88, 84], lh: [86, 106], re: [114, 78], rh: [110, 60],
++        lk: [93, 148], lf: [91, 185], rk: [108, 124], rf: [110, 158] };
++      return [a, mirror(a)];
++    })() },
++
++    squat: { dur: 900, poses: [SIDE,
++      both({ h: [106, 74], n: [98, 94], p: [78, 140], e: [120, 96], a: [142, 94], k: [114, 146], f: [102, 185] })] },
++
++    lunge: { dur: 900, poses: [SIDE,
++      { h: [101, 66], n: [100, 88], p: [100, 136], le: [99, 112], lh: [101, 134], re: [101, 112], rh: [103, 134],
++        lk: [86, 174], lf: [62, 183], rk: [126, 142], rf: [128, 185] }] },
++
++    pushup: { dur: 850, poses: [
++      { h: [162, 114], n: [145, 122], p: [95, 150], le: [143, 154], lh: [143, 185], re: [146, 154], rh: [146, 185],
++        lk: [67, 166], lf: [40, 183], rk: [68, 166], rf: [41, 183] },
++      { h: [163, 158], n: [145, 165], p: [95, 173], le: [122, 168], lh: [143, 185], re: [125, 168], rh: [146, 185],
++        lk: [67, 178], lf: [40, 183], rk: [68, 178], rf: [41, 183] }] },
++
++    kneepush: { dur: 850, poses: [
++      { h: [161, 118], n: [145, 126], p: [104, 158], le: [143, 156], lh: [143, 185], re: [146, 156], rh: [146, 185],
++        lk: [72, 182], lf: [48, 164], rk: [73, 182], rf: [49, 164] },
++      { h: [162, 157], n: [145, 164], p: [104, 174], le: [123, 167], lh: [143, 185], re: [126, 167], rh: [146, 185],
++        lk: [72, 182], lf: [48, 164], rk: [73, 182], rf: [49, 164] }] },
++
++    plank: { dur: 1400, poses: [
++      { h: [156, 154], n: [140, 160], p: [92, 171], le: [138, 183], lh: [162, 183], re: [141, 183], rh: [165, 183],
++        lk: [66, 176], lf: [40, 183], rk: [67, 176], rf: [41, 183] },
++      { h: [156, 152], n: [140, 158], p: [92, 168], le: [138, 183], lh: [162, 183], re: [141, 183], rh: [165, 183],
++        lk: [66, 175], lf: [40, 183], rk: [67, 175], rf: [41, 183] }] },
++
++    crunch: { dur: 800, poses: [
++      both({ h: [164, 174], n: [148, 178], p: [100, 178], e: [152, 160], a: [162, 166], k: [78, 148], f: [56, 183] }),
++      both({ h: [150, 146], n: [138, 160], p: [100, 178], e: [142, 140], a: [151, 148], k: [78, 148], f: [56, 183] })] },
++
++    legraise: { dur: 1100, poses: [
++      both({ h: [166, 175], n: [150, 178], p: [100, 178], e: [125, 182], a: [100, 183], k: [70, 180], f: [40, 182] }),
++      both({ h: [166, 175], n: [150, 178], p: [100, 178], e: [125, 182], a: [100, 183], k: [98, 144], f: [96, 110] })] },
++
++    bridge: { dur: 1000, poses: [
++      both({ h: [166, 177], n: [150, 180], p: [110, 179], e: [130, 183], a: [110, 183], k: [82, 150], f: [70, 183] }),
++      both({ h: [166, 177], n: [150, 178], p: [112, 150], e: [130, 183], a: [110, 183], k: [82, 147], f: [70, 183] })] },
++
++    climber: { dur: 380, poses: (function () {
++      var a = handPlank(125, 148, 164); a.rk = [124, 160]; a.rf = [104, 181];
++      var b = handPlank(125, 148, 164); b.lk = [123, 160]; b.lf = [103, 181];
++      return [a, b];
++    })() },
++
++    burpee: { dur: 600, poses: [
++      SIDE,
++      both({ h: [126, 98], n: [114, 112], p: [92, 150], e: [120, 146], a: [124, 183], k: [118, 152], f: [100, 185] }),
++      handPlank(125, 150, 166),
++      both({ h: [126, 98], n: [114, 112], p: [92, 150], e: [120, 146], a: [124, 183], k: [118, 152], f: [100, 185] }),
++      both({ h: [102, 28], n: [100, 50], p: [100, 102], e: [104, 28], a: [106, 8], k: [101, 140], f: [99, 176] })] },
++
++    wallsit: { dur: 1400, wall: 58, poses: [
++      both({ h: [68, 80], n: [66, 100], p: [66, 145], e: [80, 122], a: [96, 140], k: [104, 145], f: [104, 185] }),
++      both({ h: [68, 79], n: [66, 99], p: [66, 145], e: [80, 121], a: [96, 139], k: [104, 145], f: [104, 185] })] },
++
++    stretch: { dur: 1300, poses: (function () {
++      var up = { h: [100, 36], n: [100, 58], p: [100, 110], le: [92, 34], lh: [97, 10], re: [108, 34], rh: [103, 10],
++        lk: [93, 148], lf: [91, 185], rk: [107, 148], rf: [109, 185] };
++      var right = { h: [119, 44], n: [110, 63], p: [100, 110], le: [113, 39], lh: [133, 22], re: [126, 46], rh: [143, 32],
++        lk: [93, 148], lf: [91, 185], rk: [107, 148], rf: [109, 185] };
++      return [up, right, up, mirror(right)];
++    })() },
++
++    sideplank: { dur: 1400, poses: [
++      { h: [158, 126], n: [142, 136], p: [92, 160], le: [140, 112], lh: [140, 88], re: [142, 183], rh: [164, 183],
++        lk: [66, 172], lf: [40, 183], rk: [67, 174], rf: [41, 184] },
++      { h: [158, 129], n: [142, 139], p: [92, 166], le: [140, 115], lh: [140, 91], re: [142, 183], rh: [164, 183],
++        lk: [66, 175], lf: [40, 183], rk: [67, 177], rf: [41, 184] }] }
++  };
++
++  function ease(t) { return 0.5 - 0.5 * Math.cos(Math.PI * t); }
++  function lerp(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
++
++  function poseAt(def, ms) {
++    var n = def.poses.length, seg = def.dur, hold = seg * 0.25, cyc = n * (seg + hold);
++    var t = ms % cyc, i = Math.floor(t / (seg + hold)), local = t - i * (seg + hold);
++    var a = def.poses[i], b = def.poses[(i + 1) % n];
++    var k = local < hold ? 0 : ease((local - hold) / seg);
++    var r = {}; J.forEach(function (j) { r[j] = lerp(a[j], b[j], k); });
++    return r;
++  }
++
++  function pts() { return Array.prototype.map.call(arguments, function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' '); }
++
++  var live = [];
++  function svg(key, cls) {
++    var def = EX[key]; if (!def) return '';
++    return '<svg class="exanim ' + (cls || '') + '" data-anim="' + key + '" viewBox="0 0 200 200" aria-hidden="true">' +
++      '<rect x="0" y="0" width="200" height="200" rx="22" class="bg"/>' +
++      (def.wall ? '<line x1="' + def.wall + '" y1="40" x2="' + def.wall + '" y2="187" class="wall"/>' : '') +
++      '<line x1="18" y1="188" x2="182" y2="188" class="floor"/>' +
++      '<polyline class="far"/><polyline class="far"/>' +
++      '<polyline class="body"/><polyline class="near"/><polyline class="near"/>' +
++      '<circle r="12" class="head"/></svg>';
++  }
++
++  function paint(el, pose) {
++    var l = el.__parts;
++    if (!l) {
++      var pl = el.querySelectorAll('polyline');
++      l = el.__parts = { farArm: pl[0], farLeg: pl[1], body: pl[2], nearArm: pl[3], nearLeg: pl[4], head: el.querySelector('circle') };
++    }
++    l.farArm.setAttribute('points', pts(pose.n, pose.le, pose.lh));
++    l.farLeg.setAttribute('points', pts(pose.p, pose.lk, pose.lf));
++    l.body.setAttribute('points', pts(pose.n, pose.p));
++    l.nearArm.setAttribute('points', pts(pose.n, pose.re, pose.rh));
++    l.nearLeg.setAttribute('points', pts(pose.p, pose.rk, pose.rf));
++    l.head.setAttribute('cx', pose.h[0].toFixed(1));
++    l.head.setAttribute('cy', pose.h[1].toFixed(1));
++  }
++
++  var running = false, start = 0;
++  function frame(now) {
++    if (!start) start = now;
++    var els = document.querySelectorAll('svg.exanim');
++    if (!els.length) { running = false; return; }
++    for (var i = 0; i < els.length; i++) {
++      var el = els[i], def = EX[el.getAttribute('data-anim')];
++      if (!def) continue;
++      if (el.classList.contains('paused') && el.__parts) continue;
++      paint(el, poseAt(def, now - start));
++    }
++    requestAnimationFrame(frame);
++  }
++  function wake() { if (!running) { running = true; requestAnimationFrame(frame); } }
++
++  // DOM ga yangi animatsiya qo'shilganda avtomatik ishga tushadi
++  if (window.MutationObserver) {
++    new MutationObserver(function () { if (document.querySelector('svg.exanim')) wake(); })
++      .observe(document.documentElement, { childList: true, subtree: true });
++  }
++
++  window.ExAnim = { svg: svg, has: function (k) { return !!EX[k]; }, wake: wake, _poseAt: poseAt, _ex: EX };
++})();
+diff -ruN a/app/src/main/assets/www/app.js b/app/src/main/assets/www/app.js
+--- a/app/src/main/assets/www/app.js
++++ b/app/src/main/assets/www/app.js
+@@ -29,14 +29,45 @@
+     clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 2600);
+   }
+   function openUrl(url) { if (A && A.openUrl) A.openUrl(url); else window.open(url, '_blank'); }
++  // YouTube'ni ilova ichida ochish (Android: ichki oyna; brauzerda: yangi tab)
++  function openVideo(q, title) {
++    var url = 'https://m.youtube.com/results?search_query=' + encodeURIComponent(q);
++    if (A && A.openInApp) A.openInApp(url, title || ''); else window.open(url, '_blank');
++  }
++
++  // ---------- Ovozli murabbiy ----------
++  // 1) Tayyor ovoz fayllari (voice/*.mp3), 2) bo'lmasa telefonning o'zbekcha TTS ovozi, 3) bo'lmasa faqat signal.
++  var Coach = {
++    on: function () { return S.profile.voice !== false; },
++    say: function (keys) {
++      if (!Coach.on() || !keys || !keys.length) return false;
++      keys = keys.filter(function (k) { return VOICE[k]; });
++      if (A && A.playVoices) {
++        if (A.playVoices(keys.join(','))) return true;
++        if (A.ttsSpeak) return A.ttsSpeak(keys.map(function (k) { return VOICE[k]; }).join('. '));
++        return false;
++      }
++      // Brauzerda sinash uchun
++      var i = 0;
++      (function nextClip() {
++        if (i >= keys.length) return;
++        var a = new Audio('voice/' + keys[i++] + '.mp3');
++        a.onended = nextClip; a.onerror = function () {};
++        a.play().catch(function () {});
++      })();
++      return true;
++    },
++    ready: function () { return Coach.on() && (!A || !A.voiceReady || A.voiceReady()); }
++  };
++
+   function vibrate(ms) { try { if (A && A.vibrate) A.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+ 
+   // ---------- Holat ----------
+   var S = load();
+   function load() {
+     var def = {
+-      profile: { sex: 'm', age: 30, height: 175, goalWeight: 70, stepGoal: 8000, kcalManual: 0, model: 'gemini-2.5-flash', apiKey: '' },
+-      script: 'cyr', weights: [], foods: {}, workouts: [], onboarded: false
++      profile: { sex: 'm', age: 30, height: 175, goalWeight: 70, stepGoal: 8000, kcalManual: 0, model: 'gemini-2.5-flash', apiKey: '', voice: true },
++      script: 'cyr', weights: [], foods: {}, workouts: [], onboarded: false, plan: null
+     };
+     try {
+       var s = JSON.parse(localStorage.getItem(KEY) || 'null');
+@@ -446,8 +477,53 @@
+ 
+   // ---------- Mashqlar ----------
+   function progTotal(p) { return p.items.reduce(function (a, it) { return a + it[1]; }, 0) + p.rest * (p.items.length - 1); }
++  function planCur() {
++    if (!S.plan) return 0;
++    for (var d = 1; d <= 30; d++) if (!S.plan.done[d]) return d;
++    return 31;
++  }
++  function planSection() {
++    var h = '<h2>' + T('30 kunlik reja') + '</h2>';
++    if (!S.plan) {
++      return h + '<div class="card"><div class="muted small">' + T("Har kuni 5\u201315 daqiqa. Mashqlar kundan-kunga qiyinlashib boradi, har 4-kun dam olish.") + '</div>' +
++        '<div class="lvls">' + Object.keys(PLAN_LEVELS).map(function (k) {
++          return '<button class="lvl" data-lvl="' + k + '"><b>' + T(PLAN_LEVELS[k].name) + '</b><span class="muted small">' + PLAN_LEVELS[k].focus[0].length + '\u2013' + (PLAN_LEVELS[k].focus[0].length * 2 + 2) + ' ' + T('ta mashq') + '</span></button>';
++        }).join('') + '</div></div>';
++    }
++    var cur = planCur(), done = Object.keys(S.plan.done).length;
++    h += '<div class="card"><div class="row between"><b>' + T(PLAN_LEVELS[S.plan.level].name) + '</b><span class="muted small">' + done + ' / 30 ' + T('kun') + '</span></div>' +
++      '<div class="bar"><i style="width:' + (done / 30 * 100) + '%"></i></div>' +
++      (cur <= 30 ? '<button class="btn block" style="margin-top:12px" data-day="' + cur + '">\u25b6 ' + T(planDay(S.plan.level, cur).name) + '</button>'
++        : '<div class="mid" style="margin-top:12px;text-align:center">\ud83c\udfc6 ' + T('Reja tugadi! Barakalla!') + '</div>') +
++      '<div class="days">';
++    for (var d = 1; d <= 30; d++) {
++      var cls = S.plan.done[d] ? 'd' : d === cur ? 'c' : '';
++      h += '<button class="' + cls + (d % 4 === 0 ? ' r' : '') + '" data-day="' + d + '">' + (S.plan.done[d] ? '\u2713' : d % 4 === 0 ? '\u263e' : d) + '</button>';
++    }
++    h += '</div><button class="lnk" id="planReset">' + T('Darajani almashtirish / qayta boshlash') + '</button></div>';
++    return h;
++  }
++  function planDayModal(d) {
++    var p = planDay(S.plan.level, d), isDone = !!S.plan.done[d];
++    var md = modal(T(p.name),
++      '<div class="muted small">' + (p.restDay ? T("Bugun dam olish kuni. Xohlasangiz, yengil cho'zilish qiling.") :
++        T('Har mashqdan keyin dam') + ': ' + p.rest + ' ' + T('soniya') + ' \u00b7 ~' + Math.ceil(progTotal(p) / 60) + ' ' + T('daqiqa')) +
++      (isDone ? ' \u00b7 <b style="color:#0f9d6b">' + T('Bajarilgan') + ' \u2713</b>' : '') + '</div>' +
++      '<button class="btn block" style="margin:12px 0 0" id="dStart">\u25b6 ' + T(p.restDay ? "Yengil cho'zilish" : 'Boshlash') + '</button>' +
++      (p.restDay && !isDone ? '<button class="btn alt block" style="margin-top:8px" id="dRest">' + T('Dam oldim \u2713') + '</button>' : '') +
++      '<div class="card" style="margin-top:12px">' + p.items.map(function (it) { return exRow(it[0], it[1]); }).join('') + '</div>');
++    bindYt(md);
++    function mark() { S.plan.done[d] = dkey(); save(); }
++    $('#dStart', md).onclick = function () { closeModal(); player(p, { onDone: mark }); };
++    var r = $('#dRest', md); if (r) r.onclick = function () { mark(); closeModal(); render(); toast(T('Saqlandi')); };
++  }
++  function videoSection() {
++    return '<h2>' + T("Video mashg'ulotlar") + '</h2><div class="card list">' + VIDEO_SETS.map(function (v, i) {
++      return '<div class="item vrow" data-vs="' + i + '"><div><div class="nm">' + T(v.name) + '</div><div class="muted small">' + T(v.note) + '</div></div><span class="play">\u25b6</span></div>';
++    }).join('') + '<div class="muted small" style="margin-top:10px">' + T("O'zbekcha subtitr: videoda \u2699 \u2192 Subtitrlar \u2192 Avtotarjima \u2192 O'zbek.") + '</div></div>';
++  }
+   function viewTrain() {
+-    var h = '<h2>' + T('Mashq dasturlari') + '</h2>';
++    var h = planSection() + videoSection() + '<h2>' + T('Mashq dasturlari') + '</h2>';
+     PROGRAMS.forEach(function (p) {
+       var cls = p.level === 'Yengil' ? '' : p.level === 'Qiyin' ? ' r' : ' o';
+       h += '<div class="card prog" data-p="' + p.id + '"><div><b>' + T(p.name) + '</b><div class="muted small">' + p.items.length + ' ' + T('ta mashq') + ' · ~' +
+@@ -466,17 +542,28 @@
+   }
+   function exRow(k, sec) {
+     var e = EXERCISES[k];
+-    return '<div class="ex"><div class="row between"><b>' + T(e.name) + '</b>' + (sec ? '<span class="muted small">' + sec + ' ' + T('soniya') + '</span>' : '') + '</div>' +
+-      '<div class="muted small">' + T(e.desc) + '</div>' +
++    return '<div class="ex"><div class="exhead">' + ExAnim.svg(k, 'thumb') + '<div class="exinfo"><div class="row between"><b>' + T(e.name) + '</b>' + (sec ? '<span class="muted small">' + sec + ' ' + T('soniya') + '</span>' : '') + '</div>' +
++      '<div class="muted small">' + T(e.desc) + '</div></div></div>' +
+       '<div class="vids"><button data-yt="' + esc(e.uz) + '">' + T("O'zbekcha video") + '</button><button data-yt="' + esc(e.ru) + '">' + T('Ruscha video') + '</button></div></div>';
+   }
+   function bindYt(root) {
+     $$('[data-yt]', root).forEach(function (b) {
+-      b.onclick = function (ev) { ev.stopPropagation(); openUrl('https://www.youtube.com/results?search_query=' + encodeURIComponent(b.getAttribute('data-yt'))); };
++      b.onclick = function (ev) { ev.stopPropagation(); openVideo(b.getAttribute('data-yt'), b.textContent); };
+     });
+   }
+   bind.train = function (v) {
+     bindYt(v);
++    $$('[data-lvl]', v).forEach(function (b) {
++      b.onclick = function () { S.plan = { level: b.getAttribute('data-lvl'), start: dkey(), done: {} }; save(); render(); };
++    });
++    $$('[data-day]', v).forEach(function (b) { b.onclick = function () { planDayModal(+b.getAttribute('data-day')); }; });
++    var pr = $('#planReset', v);
++    if (pr) pr.onclick = function () {
++      var md = modal(T('Reja'), '<p>' + T("Rejani boshidan boshlaysizmi? Bajarilgan kunlar belgisi o'chadi (mashqlar tarixi qoladi).") + '</p>' +
++        '<button class="btn danger block" id="prY">' + T('Ha, qayta boshlash') + '</button>');
++      $('#prY', md).onclick = function () { S.plan = null; save(); closeModal(); render(); };
++    };
++    $$('[data-vs]', v).forEach(function (r) { r.onclick = function () { var x = VIDEO_SETS[+r.getAttribute('data-vs')]; openVideo(x.q, T(x.name)); }; });
+     $$('[data-p]', v).forEach(function (c) { c.onclick = function () { progModal(c.getAttribute('data-p')); }; });
+   };
+   function progModal(id) {
+@@ -498,51 +585,71 @@
+     } catch (e) {}
+   }
+ 
+-  function player(p) {
+-    var steps = [];
++  function player(p, opts) {
++    opts = opts || {};
++    var steps = [{ ready: true, sec: 5, next: p.items[0][0] }];
+     p.items.forEach(function (it, i) {
+       steps.push({ ex: it[0], sec: it[1] });
+       if (i < p.items.length - 1) steps.push({ rest: true, sec: p.rest, next: p.items[i + 1][0] });
+     });
+-    var idx = -1, left = 0, paused = false, timer = null, startedAt = Date.now(), activeSec = 0, kcal = 0;
++    var total = p.items.length;
++    var idx = -1, left = 0, paused = false, timer = null, startedAt = Date.now(), activeSec = 0, kcal = 0, finished = false;
+     var md = modal(T(p.name), '<div class="player" id="pl"></div>', function () { clearInterval(timer); if (A && A.keepScreenOn) A.keepScreenOn(false); });
+     if (A && A.keepScreenOn) A.keepScreenOn(true);
++    function voiceFor(s) {
++      if (s.ready) return ['ready', 'ex_' + s.next];
++      if (s.rest) return ['rest', 'next', 'ex_' + s.next];
++      return ['start'];
++    }
+     function next() {
+       idx++;
+       if (idx >= steps.length) return finish();
+-      left = steps[idx].sec; beep(steps[idx].rest ? 520 : 880); vibrate(150); draw();
++      left = steps[idx].sec;
++      vibrate(150);
++      if (!Coach.say(voiceFor(steps[idx]))) beep(steps[idx].rest || steps[idx].ready ? 520 : 880);
++      draw();
+     }
+     function draw() {
+-      var s = steps[idx], e = EXERCISES[s.rest ? s.next : s.ex];
+-      var exIdx = 0; for (var i = 0; i <= idx; i++) if (!steps[i].rest) exIdx++;
++      var s = steps[idx], key = s.ex || s.next, e = EXERCISES[key];
++      var exIdx = 0; for (var i = 0; i <= idx; i++) if (steps[i].ex) exIdx++;
++      var wait = s.rest || s.ready;
+       $('#pl', md).innerHTML =
+-        '<div class="dots">' + steps.filter(function (x) { return !x.rest; }).map(function (x, i) { return '<i class="' + (i < exIdx - (s.rest ? 0 : 1) ? 'd' : i === exIdx - 1 && !s.rest ? 'c' : '') + '"></i>'; }).join('') + '</div>' +
+-        (s.rest ? '<div class="muted">' + T('Dam olish') + '</div><div class="tm rest">' + left + '</div><div class="muted">' + T('Keyingisi') + ':</div><div class="nm">' + T(e.name) + '</div>'
+-          : '<div class="muted">' + exIdx + ' / ' + p.items.length + '</div><div class="nm">' + T(e.name) + '</div><div class="tm">' + left + '</div><div class="muted small">' + T(e.desc) + '</div>') +
++        '<div class="dots">' + p.items.map(function (x, i) { return '<i class="' + (i < exIdx - (wait ? 0 : 1) ? 'd' : i === exIdx - 1 && !wait ? 'c' : '') + '"></i>'; }).join('') + '</div>' +
++        (wait ? '<div class="muted">' + T(s.ready ? 'Tayyorlaning' : 'Dam olish') + '</div><div class="tm rest">' + left + '</div><div class="muted">' + T(s.ready ? 'Birinchi mashq' : 'Keyingisi') + ':</div><div class="nm">' + T(e.name) + '</div>' + ExAnim.svg(key, 'big small-big' + (paused ? ' paused' : '')) +
++            '<button class="btn alt" style="margin-top:12px" id="plAdd">+20 ' + T('soniya') + '</button>'
++          : '<div class="muted">' + exIdx + ' / ' + total + '</div><div class="nm">' + T(e.name) + '</div>' + ExAnim.svg(key, 'big' + (paused ? ' paused' : '')) + '<div class="tm">' + left + '</div><div class="muted small">' + T(e.desc) + '</div>') +
+         '<div class="vids" style="margin-top:14px"><button data-yt="' + esc(e.uz) + '">' + T("O'zbekcha video") + '</button><button data-yt="' + esc(e.ru) + '">' + T('Ruscha video') + '</button></div>' +
+         '<div class="grid2" style="margin-top:16px"><button class="btn ghost" id="plP">' + T(paused ? 'Davom etish' : 'Pauza') + '</button>' +
+-        '<button class="btn alt" id="plN">' + T("O'tkazib yuborish") + '</button></div>' +
+-        '<button class="btn danger block" style="margin-top:10px" id="plS">' + T('Tugatish') + '</button>';
++        '<button class="btn alt" id="plN">' + T(wait ? "Hozir boshlash" : "O'tkazib yuborish") + '</button></div>' +
++        '<div class="grid2" style="margin-top:10px"><button class="btn ghost" id="plV">' + (Coach.on() ? '\ud83d\udd0a ' + T('Ovoz') : '\ud83d\udd07 ' + T('Ovozsiz')) + '</button>' +
++        '<button class="btn danger" id="plS">' + T('Tugatish') + '</button></div>';
+       bindYt(md);
+       $('#plP', md).onclick = function () { paused = !paused; draw(); };
+       $('#plN', md).onclick = next;
+       $('#plS', md).onclick = finish;
++      $('#plV', md).onclick = function () { S.profile.voice = !Coach.on(); save(); draw(); };
++      var add = $('#plAdd', md); if (add) add.onclick = function () { left += 20; var tm = $('.tm', md); if (tm) tm.textContent = left; };
+     }
+     function tick() {
+-      if (paused || idx < 0 || idx >= steps.length) return;
++      if (paused || finished || idx < 0 || idx >= steps.length) return;
+       var s = steps[idx];
+-      if (!s.rest) { activeSec++; kcal += EXERCISES[s.ex].met * curWeight() / 3600; }
++      if (s.ex) { activeSec++; kcal += EXERCISES[s.ex].met * curWeight() / 3600; }
+       left--;
+-      if (left <= 3 && left > 0) beep(660);
++      if (left <= 3 && left > 0) { if (!Coach.say(['n' + left])) beep(660); }
++      else if (s.ex && left === 10 && s.sec >= 25) Coach.say(['ten']);
++      else if (s.ex && s.sec >= 40 && left === Math.floor(s.sec / 2) && left > 12) Coach.say(['half']);
+       if (left <= 0) next(); else { var tm = $('.tm', md); if (tm) tm.textContent = left; }
+     }
+     function finish() {
++      if (finished) return; finished = true;
+       clearInterval(timer);
+       var min = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
+       if (activeSec >= 30) {
+         S.workouts.push({ d: dkey(), name: p.name, min: min, kcal: r0(kcal) }); save();
+-        $('#pl', md).innerHTML = '<div style="font-size:56px">🏆</div><div class="nm">' + T('Barakalla!') + '</div>' +
+-          '<p class="muted">' + min + ' ' + T('daqiqa') + ' · ~' + r0(kcal) + ' ' + T('kkal sarflandi') + '</p>' +
++        if (opts.onDone) opts.onDone();
++        Coach.say(['done']);
++        $('#pl', md).innerHTML = '<div style="font-size:56px">\ud83c\udfc6</div><div class="nm">' + T('Barakalla!') + '</div>' +
++          '<p class="muted">' + min + ' ' + T('daqiqa') + ' \u00b7 ~' + r0(kcal) + ' ' + T('kkal sarflandi') + '</p>' +
+           '<button class="btn block" id="plD">' + T('Yopish') + '</button>';
+       } else {
+         $('#pl', md).innerHTML = '<p class="muted">' + T('Mashg\'ulot juda qisqa bo\'ldi, saqlanmadi.') + '</p><button class="btn block" id="plD">' + T('Yopish') + '</button>';
+@@ -622,6 +729,10 @@
+     var p = S.profile;
+     return '<h2>' + T('Yozuv') + '</h2><div class="card"><div class="seg" id="sScr"><button data-v="lat" class="' + (S.script === 'lat' ? 'on' : '') + '">Lotin</button>' +
+       '<button data-v="cyr" class="' + (S.script === 'cyr' ? 'on' : '') + '">Кирилл</button></div></div>' +
++      '<h2>' + T('Ovozli murabbiy') + '</h2><div class="card"><div class="seg" id="sVoice"><button data-v="1" class="' + (p.voice !== false ? 'on' : '') + '">' + T('Yoqilgan') + '</button>' +
++      '<button data-v="0" class="' + (p.voice === false ? 'on' : '') + '">' + T("O'chirilgan") + '</button></div>' +
++      '<div class="muted small" style="margin-top:8px">' + T("Mashq paytida o'zbekcha ovoz: mashq nomi, 3-2-1, dam olish.") + '</div>' +
++      '<button class="btn alt block" style="margin-top:10px" id="sVTest">\u25b6 ' + T('Ovozni tekshirish') + '</button></div>' +
+       '<h2>' + T("Shaxsiy ma'lumotlar") + '</h2><div class="card">' + profileForm() +
+       '<div class="muted small" style="margin-top:8px">' + T('Hisoblangan kunlik kaloriya') + ': <b>' + kcalGoal() + '</b> ' + T('kkal') + '</div>' +
+       '<button class="btn block" style="margin-top:12px" id="sSave">' + T('Saqlash') + '</button></div>' +
+@@ -639,6 +750,8 @@
+     bindSeg(v);
+     $$('#sScr button', v).forEach(function (b) { b.onclick = function () { S.script = b.getAttribute('data-v'); I18N.script = S.script; save(); render(); }; });
+     $('#sSave', v).onclick = function () { readProfile(v); save(); render(); toast(T('Saqlandi')); };
++    $$('#sVoice button', v).forEach(function (b) { b.onclick = function () { S.profile.voice = b.getAttribute('data-v') === '1'; save(); render(); }; });
++    $('#sVTest', v).onclick = function () { if (!Coach.on()) { toast(T("Avval ovozni yoqing")); return; } if (!Coach.say(['ready', 'ex_squat', 'n3', 'n2', 'n1', 'start'])) toast(T("Telefonda o'zbekcha ovoz topilmadi")); };
+     $('#sKeySave', v).onclick = function () { S.profile.apiKey = $('#sKey', v).value.trim(); S.profile.model = $('#sModel', v).value.trim() || 'gemini-2.5-flash'; save(); toast(T('Saqlandi')); };
+     $('#sKeyGet', v).onclick = function () { openUrl('https://aistudio.google.com/apikey'); };
+     $('#sExp', v).onclick = function () {
+diff -ruN a/app/src/main/assets/www/data.js b/app/src/main/assets/www/data.js
+--- a/app/src/main/assets/www/data.js
++++ b/app/src/main/assets/www/data.js
+@@ -66,3 +66,84 @@
+   { id: "hard", name: "Kuchli intensiv", level: "Qiyin", rest: 10,
+     items: [["burpee", 40], ["climber", 40], ["squat", 45], ["pushup", 40], ["lunge", 45], ["burpee", 40], ["plank", 60], ["stretch", 60]] }
+ ];
++
++// ---------- 30 kunlik reja ----------
++// Har 4-kun dam olish. Kundan-kunga mashq vaqti oshib boradi, 16-kundan asosiy qism 2 marta bajariladi.
++window.PLAN_LEVELS = {
++  easy: { name: "Boshlang'ich", base: 25, step: 2, max: 45, rest: 20, warm: "march",
++    focus: [["squat", "kneepush", "bridge", "crunch", "plank"],
++            ["squat", "lunge", "bridge", "wallsit"],
++            ["crunch", "legraise", "bridge", "plank"],
++            ["kneepush", "plank", "sideplank", "kneepush"]] },
++  mid: { name: "O'rta", base: 30, step: 2, max: 55, rest: 15, warm: "jumping",
++    focus: [["squat", "pushup", "lunge", "climber", "plank"],
++            ["squat", "lunge", "bridge", "wallsit", "squat"],
++            ["crunch", "legraise", "climber", "plank", "sideplank"],
++            ["pushup", "plank", "kneepush", "sideplank", "pushup"]] },
++  hard: { name: "Ilg'or", base: 40, step: 2, max: 60, rest: 10, warm: "jumping",
++    focus: [["burpee", "squat", "pushup", "climber", "lunge", "plank"],
++            ["squat", "lunge", "burpee", "wallsit", "bridge"],
++            ["climber", "crunch", "legraise", "sideplank", "plank", "burpee"],
++            ["burpee", "pushup", "climber", "pushup", "plank", "sideplank"]] }
++};
++window.PLAN_FOCUS = ["Butun tana", "Oyoq va dumba", "Qorin mushaklari", "Qo'l va ko'krak"];
++window.planDay = function (level, day) {
++  var L = PLAN_LEVELS[level];
++  if (day % 4 === 0) {
++    return { id: 'plan' + day, day: day, restDay: true, name: (day) + '-kun · Dam olish', level: L.name, rest: 10,
++      items: [["march", 60], ["stretch", 60], ["stretch", 60]] };
++  }
++  var work = day - Math.floor(day / 4);              // nechanchi mashq kuni
++  var f = (work - 1) % 4;
++  var sec = Math.round(Math.min(L.max, L.base + L.step * Math.floor((day - 1) / 2)) / 5) * 5;
++  var hold = { plank: 1, sideplank: 1, wallsit: 1 };
++  var main = L.focus[f].map(function (k) { return [k, hold[k] ? Math.max(20, Math.round(sec * 0.8 / 5) * 5) : sec]; });
++  var items = [[L.warm, 40]].concat(main);
++  if (day >= 16) items = items.concat(main);
++  items.push(["stretch", 45]);
++  return { id: 'plan' + day, day: day, name: day + '-kun · ' + PLAN_FOCUS[f], level: L.name, rest: L.rest, items: items };
++};
++
++// ---------- Ovozli murabbiy iboralari ----------
++// Ovoz fayllari (voice/<kalit>.mp3) GitHub'da APK yig'ishda shu ro'yxatdan yasaladi.
++/*VOICE*/
++window.VOICE = {
++  "ready": "Tayyorlaning",
++  "start": "Boshladik!",
++  "n3": "Uch",
++  "n2": "Ikki",
++  "n1": "Bir",
++  "rest": "Dam oling",
++  "next": "Keyingi mashq",
++  "ten": "O'n soniya qoldi",
++  "half": "Yarmi o'tdi, davom eting!",
++  "done": "Barakalla! Mashg'ulot tugadi",
++  "ex_jumping": "Sakrab qo'l-oyoq ochish",
++  "ex_march": "Joyida yurish",
++  "ex_squat": "O'tirib turish",
++  "ex_lunge": "Oldinga qadam",
++  "ex_pushup": "Polga tayanib qo'l bukish",
++  "ex_kneepush": "Tizzada qo'l bukish",
++  "ex_plank": "Planka",
++  "ex_crunch": "Qorin pressi",
++  "ex_legraise": "Oyoq ko'tarish",
++  "ex_bridge": "Ko'prikcha",
++  "ex_climber": "Tog'ga chiqish",
++  "ex_burpee": "Berpi",
++  "ex_wallsit": "Devorda o'tirish",
++  "ex_stretch": "Cho'zilish",
++  "ex_sideplank": "Yon planka"
++};
++/*/VOICE*/
++
++// ---------- Professional video mashg'ulotlar (YouTube qidiruvi, ilova ichida ochiladi) ----------
++window.VIDEO_SETS = [
++  { name: "Butun tana, 20 daqiqa", note: "Boshlovchilar uchun, jihozsiz", q: "full body workout 20 min beginner no equipment" },
++  { name: "Yog' yoqish ([[HIIT]]), 15 daqiqa", note: "Tez sur'atda, terlatadi", q: "15 min HIIT workout no equipment" },
++  { name: "Qorin pressi, 10 daqiqa", note: "Pol ustida", q: "10 min abs workout" },
++  { name: "Oyoq va dumba, 15 daqiqa", note: "Jihozsiz", q: "15 min legs and glutes workout at home" },
++  { name: "Uyda yurish, 30 daqiqa", note: "Tizzaga yengil, sakrashsiz", q: "walking workout at home 30 minutes" },
++  { name: "Cho'zilish va yoga, 15 daqiqa", note: "Mashqdan keyin yoki ertalab", q: "15 min full body stretch" },
++  { name: "Ruscha: uy mashqlari", note: "Rus tilida tushuntirish", q: "тренировка дома для начинающих 20 минут" },
++  { name: "O'zbekcha mashqlar", note: "O'zbek tilidagi videolar", q: "uyda sport mashqlari o'zbek tilida" }
++];
+diff -ruN a/app/src/main/assets/www/index.html b/app/src/main/assets/www/index.html
+--- a/app/src/main/assets/www/index.html
++++ b/app/src/main/assets/www/index.html
+@@ -28,6 +28,7 @@
+ 
+ <script src="i18n.js"></script>
+ <script src="data.js"></script>
++<script src="anim.js"></script>
+ <script src="zxing.min.js"></script>
+ <script src="app.js"></script>
+ </body>
+diff -ruN a/app/src/main/assets/www/style.css b/app/src/main/assets/www/style.css
+--- a/app/src/main/assets/www/style.css
++++ b/app/src/main/assets/www/style.css
+@@ -101,3 +101,32 @@
+ .spin { display: inline-block; width: 18px; height: 18px; border: 3px solid var(--brand-2); border-top-color: var(--brand);
+   border-radius: 50%; animation: s 0.8s linear infinite; vertical-align: middle; }
+ @keyframes s { to { transform: rotate(360deg); } }
++
++/* Mashq animatsiyalari */
++.exhead { display: flex; gap: 12px; align-items: flex-start; }
++.exinfo { flex: 1; min-width: 0; }
++svg.exanim { display: block; }
++svg.exanim .bg { fill: var(--brand-2); }
++svg.exanim .floor { stroke: #c9d6cf; stroke-width: 3; stroke-linecap: round; }
++svg.exanim .wall { stroke: #c9d6cf; stroke-width: 5; stroke-linecap: round; }
++svg.exanim polyline { fill: none; stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; }
++svg.exanim .near, svg.exanim .body { stroke: var(--brand); }
++svg.exanim .far { stroke: #7fcbaa; }
++svg.exanim .head { fill: var(--brand); }
++svg.exanim.thumb { width: 72px; height: 72px; flex: none; }
++svg.exanim.big { width: min(260px, 70vw); height: auto; aspect-ratio: 1; margin: 10px auto 0; }
++svg.exanim.small-big { width: min(170px, 46vw); opacity: .85; }
++
++/* 30 kunlik reja */
++.lvls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
++.lvl { border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 12px 6px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
++.lvl b { font-size: 15px; }
++.days { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 14px; }
++.days button { aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--line); background: #fff; font-weight: 700; font-size: 14px; color: var(--ink); padding: 0; }
++.days button.r { color: var(--muted); background: var(--bg); }
++.days button.d { background: var(--brand); border-color: var(--brand); color: #fff; }
++.days button.c { border: 2px solid var(--warn); color: var(--warn); }
++.lnk { display: block; margin: 14px auto 0; border: 0; background: transparent; color: var(--muted); font-size: 13px; text-decoration: underline; }
++/* Video mashg'ulotlar */
++.vrow { cursor: pointer; }
++.vrow .play { width: 36px; height: 36px; border-radius: 50%; background: #fdeaea; color: #e33; display: grid; place-items: center; font-size: 14px; flex: none; }
+diff -ruN a/app/src/main/java/uz/sihat/app/MainActivity.java b/app/src/main/java/uz/sihat/app/MainActivity.java
+--- a/app/src/main/java/uz/sihat/app/MainActivity.java
++++ b/app/src/main/java/uz/sihat/app/MainActivity.java
+@@ -7,17 +7,24 @@
+ import android.content.Context;
+ import android.content.Intent;
+ import android.content.SharedPreferences;
++import android.content.pm.ActivityInfo;
+ import android.content.pm.PackageManager;
++import android.content.res.AssetFileDescriptor;
+ import android.graphics.Color;
+ import android.hardware.Sensor;
+ import android.hardware.SensorEvent;
+ import android.hardware.SensorEventListener;
+ import android.hardware.SensorManager;
++import android.media.MediaPlayer;
+ import android.net.Uri;
+ import android.os.Build;
+ import android.os.Bundle;
+ import android.os.VibrationEffect;
+ import android.os.Vibrator;
++import android.speech.tts.TextToSpeech;
++import android.view.Gravity;
++import android.view.View;
++import android.view.ViewGroup;
+ import android.view.WindowManager;
+ import android.webkit.JavascriptInterface;
+ import android.webkit.PermissionRequest;
+@@ -28,13 +35,17 @@
+ import android.webkit.WebSettings;
+ import android.webkit.WebView;
+ import android.webkit.WebViewClient;
++import android.widget.FrameLayout;
++import android.widget.LinearLayout;
++import android.widget.TextView;
+ 
+ import java.io.ByteArrayInputStream;
+ import java.io.IOException;
+ import java.io.InputStream;
+-import java.text.SimpleDateFormat;
++import java.util.ArrayList;
+ import java.util.Calendar;
+ import java.util.Date;
++import java.util.List;
+ import java.util.Locale;
+ 
+ /**
+@@ -61,6 +72,20 @@
+     private ValueCallback<Uri[]> fileCallback;
+     private long lastNotify = 0;
+ 
++    // Ichki video oynasi (YouTube va boshqa saytlar ilova ichida)
++    private FrameLayout root;
++    private LinearLayout overlay;
++    private WebView inner;
++    private TextView innerTitle;
++    private View fullView;
++    private WebChromeClient.CustomViewCallback fullCallback;
++
++    // Ovozli murabbiy
++    private MediaPlayer player;
++    private final List<String> voiceQueue = new ArrayList<>();
++    private TextToSpeech tts;
++    private boolean ttsUz = false;
++
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+         super.onCreate(savedInstanceState);
+@@ -72,7 +97,9 @@
+         if (sensorManager != null) stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+ 
+         web = new WebView(this);
+-        setContentView(web);
++        root = new FrameLayout(this);
++        root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++        setContentView(root);
+ 
+         WebSettings s = web.getSettings();
+         s.setJavaScriptEnabled(true);
+@@ -86,6 +113,139 @@
+         web.setWebViewClient(new LocalClient());
+         web.setWebChromeClient(new Chrome());
+         web.loadUrl(START_URL);
++
++        if (stepSensor != null && !needsStepPermission()) StepJob.schedule(this);
++        initTts();
++    }
++
++    // ---------- Ichki brauzer oynasi ----------
++    private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
++
++    private void openInApp(String url, String title) {
++        if (overlay == null) {
++            overlay = new LinearLayout(this);
++            overlay.setOrientation(LinearLayout.VERTICAL);
++            overlay.setBackgroundColor(Color.BLACK);
++
++            LinearLayout bar = new LinearLayout(this);
++            bar.setOrientation(LinearLayout.HORIZONTAL);
++            bar.setGravity(Gravity.CENTER_VERTICAL);
++            bar.setBackgroundColor(Color.parseColor("#0F9D6B"));
++            bar.setPadding(dp(4), dp(4), dp(4), dp(4));
++
++            TextView close = new TextView(this);
++            close.setText("\u2715");
++            close.setTextColor(Color.WHITE);
++            close.setTextSize(22);
++            close.setPadding(dp(14), dp(6), dp(14), dp(6));
++            close.setOnClickListener(v -> closeInApp());
++            bar.addView(close);
++
++            innerTitle = new TextView(this);
++            innerTitle.setTextColor(Color.WHITE);
++            innerTitle.setTextSize(16);
++            innerTitle.setSingleLine(true);
++            bar.addView(innerTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
++            overlay.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
++
++            inner = new WebView(this);
++            WebSettings s = inner.getSettings();
++            s.setJavaScriptEnabled(true);
++            s.setDomStorageEnabled(true);
++            s.setMediaPlaybackRequiresUserGesture(false);
++            s.setAllowFileAccess(false);
++            inner.setWebViewClient(new WebViewClient() {
++                @Override
++                public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
++                    String sch = request.getUrl().getScheme();
++                    // intent://, vnd.youtube:// kabi havolalar tashqi ilovaga o'tkazmasin
++                    return !("http".equals(sch) || "https".equals(sch));
++                }
++            });
++            inner.setWebChromeClient(new WebChromeClient() {
++                @Override
++                public void onShowCustomView(View view, CustomViewCallback callback) {
++                    if (fullView != null) { callback.onCustomViewHidden(); return; }
++                    fullView = view; fullCallback = callback;
++                    root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++                    overlay.setVisibility(View.GONE);
++                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
++                    getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
++                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
++                }
++
++                @Override
++                public void onHideCustomView() { exitFullscreen(); }
++            });
++            overlay.addView(inner, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
++            root.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++        }
++        innerTitle.setText(title == null || title.isEmpty() ? "YouTube" : title);
++        overlay.setVisibility(View.VISIBLE);
++        inner.onResume();
++        inner.loadUrl(url);
++        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
++    }
++
++    private void exitFullscreen() {
++        if (fullView == null) return;
++        root.removeView(fullView);
++        fullView = null;
++        if (fullCallback != null) fullCallback.onCustomViewHidden();
++        fullCallback = null;
++        if (overlay != null) overlay.setVisibility(View.VISIBLE);
++        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
++        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
++    }
++
++    private boolean inAppOpen() { return overlay != null && overlay.getVisibility() == View.VISIBLE; }
++
++    private void closeInApp() {
++        exitFullscreen();
++        if (overlay == null) return;
++        inner.loadUrl("about:blank");
++        inner.onPause();
++        overlay.setVisibility(View.GONE);
++        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
++    }
++
++    // ---------- Ovozli murabbiy ----------
++    private void initTts() {
++        try {
++            tts = new TextToSpeech(this, status -> {
++                if (status != TextToSpeech.SUCCESS || tts == null) return;
++                int r = tts.setLanguage(new Locale("uz", "UZ"));
++                ttsUz = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED;
++            });
++        } catch (Exception ignored) { }
++    }
++
++    private boolean voiceExists(String key) {
++        try {
++            AssetFileDescriptor fd = getAssets().openFd("www/voice/" + key + ".mp3");
++            fd.close();
++            return true;
++        } catch (IOException e) {
++            return false;
++        }
++    }
++
++    private void playNextVoice() {
++        if (player != null) { try { player.release(); } catch (Exception ignored) { } player = null; }
++        if (voiceQueue.isEmpty()) return;
++        String key = voiceQueue.remove(0);
++        try {
++            AssetFileDescriptor fd = getAssets().openFd("www/voice/" + key + ".mp3");
++            player = new MediaPlayer();
++            player.setDataSource(fd.getFileDescriptor(), fd.getStartOffset(), fd.getLength());
++            fd.close();
++            player.setOnCompletionListener(mp -> playNextVoice());
++            player.setOnErrorListener((mp, what, extra) -> { playNextVoice(); return true; });
++            player.prepare();
++            player.start();
++        } catch (Exception e) {
++            playNextVoice();
++        }
+     }
+ 
+     // ---------- Lokal fayllarni berish ----------
+@@ -121,6 +281,7 @@
+         if (path.endsWith(".png")) return "image/png";
+         if (path.endsWith(".svg")) return "image/svg+xml";
+         if (path.endsWith(".json")) return "application/json";
++        if (path.endsWith(".mp3")) return "audio/mpeg";
+         return "application/octet-stream";
+     }
+ 
+@@ -180,6 +341,7 @@
+             pendingCamera = null;
+         } else if (requestCode == REQ_STEPS) {
+             registerSteps();
++            if (ok) StepJob.schedule(this);
+             notifyJs(true);
+         }
+     }
+@@ -200,26 +362,12 @@
+                 && checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED;
+     }
+ 
+-    private static String day(Date d) {
+-        return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(d);
+-    }
++    private static String day(Date d) { return StepStore.day(d); }
+ 
+     @Override
+     public void onSensorChanged(SensorEvent event) {
+         if (event.sensor.getType() != Sensor.TYPE_STEP_COUNTER) return;
+-        long total = (long) event.values[0];
+-        String today = day(new Date());
+-        long last = prefs.getLong("last_total", -1);
+-        long todaySteps = prefs.getLong("steps_" + today, 0);
+-        if (last >= 0) {
+-            long delta = total - last;
+-            if (delta < 0) delta = total; // telefon qayta yoqilgan
+-            if (delta > 0 && delta < 100000) todaySteps += delta;
+-        }
+-        prefs.edit()
+-                .putLong("steps_" + today, todaySteps)
+-                .putLong("last_total", total)
+-                .apply();
++        StepStore.record(this, (long) event.values[0]);
+         notifyJs(false);
+     }
+ 
+@@ -248,7 +396,20 @@
+     }
+ 
+     @Override
++    protected void onDestroy() {
++        if (tts != null) { try { tts.shutdown(); } catch (Exception ignored) { } tts = null; }
++        voiceQueue.clear();
++        if (player != null) { try { player.release(); } catch (Exception ignored) { } player = null; }
++        super.onDestroy();
++    }
++
++    @Override
+     public void onBackPressed() {
++        if (fullView != null) { exitFullscreen(); return; }
++        if (inAppOpen()) {
++            if (inner.canGoBack()) inner.goBack(); else closeInApp();
++            return;
++        }
+         web.evaluateJavascript("window.sihatBack ? window.sihatBack() : false", value -> {
+             if (!"true".equals(value)) super.onBackPressed();
+         });
+@@ -295,6 +456,34 @@
+         public void openUrl(String url) { runOnUiThread(() -> openExternal(url)); }
+ 
+         @JavascriptInterface
++        public void openInApp(String url, String title) { runOnUiThread(() -> MainActivity.this.openInApp(url, title)); }
++
++        /** Ovoz fayllari mavjudmi (yoki o'zbekcha TTS ovozi) */
++        @JavascriptInterface
++        public boolean voiceReady() { return voiceExists("start") || ttsUz; }
++
++        /** "ready,ex_squat,start" — fayllarni ketma-ket o'qiydi. Fayl bo'lmasa false. */
++        @JavascriptInterface
++        public boolean playVoices(String keys) {
++            if (keys == null || keys.isEmpty()) return false;
++            String[] arr = keys.split(",");
++            if (!voiceExists(arr[0])) return false;
++            runOnUiThread(() -> {
++                voiceQueue.clear();
++                for (String k : arr) if (!k.isEmpty()) voiceQueue.add(k);
++                playNextVoice();
++            });
++            return true;
++        }
++
++        @JavascriptInterface
++        public boolean ttsSpeak(String text) {
++            if (tts == null || !ttsUz) return false;
++            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sihat");
++            return true;
++        }
++
++        @JavascriptInterface
+         public void vibrate(int ms) {
+             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+             if (v != null && v.hasVibrator()) v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
+diff -ruN a/app/src/main/java/uz/sihat/app/StepJob.java b/app/src/main/java/uz/sihat/app/StepJob.java
+--- a/app/src/main/java/uz/sihat/app/StepJob.java
++++ b/app/src/main/java/uz/sihat/app/StepJob.java
+@@ -0,0 +1,78 @@
++package uz.sihat.app;
++
++import android.app.job.JobInfo;
++import android.app.job.JobParameters;
++import android.app.job.JobScheduler;
++import android.app.job.JobService;
++import android.content.ComponentName;
++import android.content.Context;
++import android.hardware.Sensor;
++import android.hardware.SensorEvent;
++import android.hardware.SensorEventListener;
++import android.hardware.SensorManager;
++import android.os.Handler;
++import android.os.Looper;
++
++/**
++ * Fon vazifasi: taxminan har 15 daqiqada qadam sensorini bir marta o'qib saqlaydi.
++ * Shunda ilova bir necha kun ochilmasa ham qadamlar to'g'ri kunga yoziladi,
++ * telefon o'chib-yonsa ham ko'pi bilan oxirgi 15 daqiqalik qadamlar yo'qoladi.
++ */
++public class StepJob extends JobService implements SensorEventListener {
++    private static final int JOB_ID = 7001;
++
++    private SensorManager sm;
++    private JobParameters params;
++    private final Handler handler = new Handler(Looper.getMainLooper());
++    private final Runnable timeout = () -> done();
++
++    static void schedule(Context c) {
++        JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
++        if (js == null) return;
++        for (JobInfo j : js.getAllPendingJobs()) if (j.getId() == JOB_ID) return; // allaqachon rejalashtirilgan
++        JobInfo info = new JobInfo.Builder(JOB_ID, new ComponentName(c, StepJob.class))
++                .setPeriodic(15 * 60 * 1000L)
++                .setPersisted(true)
++                .build();
++        try { js.schedule(info); } catch (Exception ignored) { }
++    }
++
++    @Override
++    public boolean onStartJob(JobParameters p) {
++        params = p;
++        sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
++        Sensor s = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
++        if (s == null) return false;
++        try {
++            sm.registerListener(this, s, SensorManager.SENSOR_DELAY_NORMAL);
++        } catch (Exception e) {
++            return false;
++        }
++        handler.postDelayed(timeout, 20000);
++        return true;
++    }
++
++    @Override
++    public void onSensorChanged(SensorEvent e) {
++        if (e.sensor.getType() != Sensor.TYPE_STEP_COUNTER) return;
++        StepStore.record(this, (long) e.values[0]);
++        done();
++    }
++
++    @Override
++    public void onAccuracyChanged(Sensor sensor, int accuracy) { }
++
++    private void done() {
++        handler.removeCallbacks(timeout);
++        if (sm != null) sm.unregisterListener(this);
++        if (params != null) { jobFinished(params, false); params = null; }
++    }
++
++    @Override
++    public boolean onStopJob(JobParameters p) {
++        handler.removeCallbacks(timeout);
++        if (sm != null) sm.unregisterListener(this);
++        params = null;
++        return true;
++    }
++}
+diff -ruN a/app/src/main/java/uz/sihat/app/StepStore.java b/app/src/main/java/uz/sihat/app/StepStore.java
+--- a/app/src/main/java/uz/sihat/app/StepStore.java
++++ b/app/src/main/java/uz/sihat/app/StepStore.java
+@@ -0,0 +1,41 @@
++package uz.sihat.app;
++
++import android.content.Context;
++import android.content.SharedPreferences;
++
++import java.text.SimpleDateFormat;
++import java.util.Date;
++import java.util.Locale;
++
++/**
++ * Qadamlarni saqlash mantig'i — ilova ham, fon vazifasi (StepJob) ham shuni ishlatadi.
++ * TYPE_STEP_COUNTER telefon yoqilgandan beri jami qadamni beradi; oxirgi ko'rilgan
++ * qiymat bilan farq o'sha paytdagi kunga qo'shiladi.
++ */
++final class StepStore {
++    private StepStore() { }
++
++    static String day(Date d) {
++        return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(d);
++    }
++
++    static SharedPreferences prefs(Context c) {
++        return c.getSharedPreferences("steps", Context.MODE_PRIVATE);
++    }
++
++    static synchronized void record(Context c, long total) {
++        SharedPreferences p = prefs(c);
++        String today = day(new Date());
++        long last = p.getLong("last_total", -1);
++        long todaySteps = p.getLong("steps_" + today, 0);
++        if (last >= 0) {
++            long delta = total - last;
++            if (delta < 0) delta = total; // telefon qayta yoqilgan: hisob noldan boshlangan
++            if (delta > 0 && delta < 100000) todaySteps += delta;
++        }
++        p.edit()
++                .putLong("steps_" + today, todaySteps)
++                .putLong("last_total", total)
++                .apply();
++    }
++}
+diff -ruN a/tools/gen_voice.py b/tools/gen_voice.py
+--- a/tools/gen_voice.py
++++ b/tools/gen_voice.py
+@@ -0,0 +1,40 @@
++# Ovozli murabbiy uchun o'zbekcha mp3 fayllarni yasaydi (APK yig'ishda GitHub'da ishlaydi).
++# Iboralar app/src/main/assets/www/data.js ichidagi /*VOICE*/ ... /*/VOICE*/ blokidan olinadi.
++import asyncio, io, json, os, re, sys
++
++WWW = os.path.join(os.path.dirname(__file__), '..', 'app', 'src', 'main', 'assets', 'www')
++VOICE_NAME = os.environ.get('SIHAT_VOICE', 'uz-UZ-SardorNeural')
++
++def phrases():
++    src = io.open(os.path.join(WWW, 'data.js'), encoding='utf-8').read()
++    block = src.split('/*VOICE*/')[1].split('/*/VOICE*/')[0]
++    obj = block[block.index('{'):block.rindex('}') + 1]
++    return json.loads(obj)
++
++async def main():
++    import edge_tts
++    out = os.path.join(WWW, 'voice')
++    os.makedirs(out, exist_ok=True)
++    ok = 0
++    for key, text in phrases().items():
++        path = os.path.join(out, key + '.mp3')
++        if os.path.exists(path):
++            ok += 1; continue
++        for attempt in range(3):
++            try:
++                await edge_tts.Communicate(text, VOICE_NAME, rate='-5%').save(path)
++                ok += 1
++                print('OK ', key, '-', text)
++                break
++            except Exception as e:
++                print('qayta urinish', key, e)
++                await asyncio.sleep(2)
++    print('Tayyor: %d ta fayl' % ok)
++
++if __name__ == '__main__':
++    try:
++        asyncio.run(main())
++    except Exception as e:
++        # Ovoz yasalmasa ham APK yig'ilaversin (ilova TTS yoki signalga o'tadi)
++        print('Ovoz yasab bo\'lmadi:', e)
++        sys.exit(0)
