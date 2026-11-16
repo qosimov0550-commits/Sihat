@@ -4,8 +4,8 @@ on:
   push:
     paths:
       - '**.zip'
+      - 'patches/**'
       - '.github/workflows/**'
-      - 'Sihat/**'
   workflow_dispatch:
 
 jobs:
@@ -13,24 +13,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Arxivni ochish
+      - name: Loyihani tayyorlash (arxiv + patchlar)
         run: |
-          ls -la
-          # Repodagi Sihat/ fayllari arxivdagidan ustun turadi (-n: ustiga yozmaslik)
-          for f in *.zip; do unzip -n "$f"; done
+          rm -rf build && mkdir build && cd build
+          unzip -q "$(ls ../*.zip | head -1)"
+          cd Sihat
+          for p in ../../patches/*.patch; do
+            echo "== $p"
+            patch -p1 --no-backup-if-mismatch < "$p"
+          done
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+      - name: Ovoz fayllari (o'zbekcha murabbiy)
+        continue-on-error: true
+        working-directory: build/Sihat
+        run: |
+          pip install -q edge-tts
+          python3 tools/gen_voice.py
+          ls -la app/src/main/assets/www/voice || true
       - name: APK yig'ish
-        working-directory: Sihat
+        working-directory: build/Sihat
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          python3 patch_anim.py
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
       - uses: actions/upload-artifact@v5
         with:
           name: Sihat-apk
-          path: Sihat/app/build/outputs/apk/release/*.apk
+          path: build/Sihat/app/build/outputs/apk/release/*.apk
