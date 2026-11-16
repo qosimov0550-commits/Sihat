@@ -1,0 +1,31 @@
+name: APK yig'ish
+
+on:
+  push:
+    paths:
+      - '**.zip'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Arxivni ochish
+        run: |
+          ls -la
+          for f in *.zip; do unzip -o "$f"; done
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: APK yig'ish
+        working-directory: Sihat
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sihat-apk
+          path: Sihat/app/build/outputs/apk/release/*.apk
