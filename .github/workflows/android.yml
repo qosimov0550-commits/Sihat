@@ -1,0 +1,33 @@
+name: APK yig'ish
+
+on:
+  push:
+    paths:
+      - '**.zip'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Arxivni ochish
+        run: |
+          ls -la
+          for f in *.zip; do unzip -o "$f"; done
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: APK yig'ish
+        working-directory: Sihat
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Sihat-apk
+          path: Sihat/app/build/outputs/apk/release/*.apk
