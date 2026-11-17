@@ -6,6 +6,7 @@ on:
       - '**.zip'
       - 'patches/**'
       - '.github/workflows/**'
+      - 'rasmlar/**'
   workflow_dispatch:
 
 permissions:
@@ -29,6 +30,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Mashq rasmlari (rasmlar/ papkasidan)
+        working-directory: build/Sihat
+        run: |
+          pip install -q pillow
+          python3 tools/gen_frames.py "$GITHUB_WORKSPACE/rasmlar"
       - name: Ovoz fayllari (o'zbekcha murabbiy)
         continue-on-error: true
         working-directory: build/Sihat
