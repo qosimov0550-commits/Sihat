@@ -1,0 +1,51 @@
+diff -ruN a/app/src/main/assets/www/app.js b/app/src/main/assets/www/app.js
+--- a/app/src/main/assets/www/app.js
++++ b/app/src/main/assets/www/app.js
+@@ -260,7 +260,7 @@
+       var sum = items.reduce(function (a, f) { return a + f.kcal; }, 0);
+       h += '<h2>' + T(ml[1]) + ' <span class="muted small">· ' + sum + ' ' + T('kkal') + '</span></h2><div class="card list">' +
+         items.map(function (f) {
+-          return '<div class="item"><div><div class="nm">' + esc(f.name) + '</div>' + (f.note ? '<div class="muted small">' + esc(f.note) + '</div>' : '') +
++          return '<div class="item"><div><div class="nm">' + esc(T(f.name)) + '</div>' + (f.note ? '<div class="muted small">' + esc(f.note) + '</div>' : '') +
+             '</div><div class="row"><b>' + f.kcal + '</b><button class="x" data-del="' + f.id + '">×</button></div></div>';
+         }).join('') + '</div>';
+     });
+@@ -490,10 +490,13 @@
+       })();
+     }
+     function showResult(items) {
++      // Taom nomi bosh harf bilan; natijadan keyin yana suratga olish mumkin bo'lsin
++      items.forEach(function (it) { it.name = String(it.name || '').trim(); it.name = it.name.charAt(0).toUpperCase() + it.name.slice(1); });
++      $('#pPick', md).disabled = false; $('#pShot', md).disabled = false;
+       if (!items.length) { $('#ps', md).textContent = T('Rasmda taom aniqlanmadi.'); $('#pPick', md).disabled = false; return; }
+       $('#ps', md).textContent = T("Natija taxminiy. Kerak bo'lsa, kaloriyani o'zgartiring.");
+       $('#pRes', md).innerHTML = '<div class="card list" style="margin-top:10px">' + items.map(function (it, i) {
+-        return '<div class="item"><div style="flex:1"><div class="nm">' + esc(it.name) + '</div><div class="muted small">~' + r0(it.grams || 0) + ' ' + T('g') + '</div></div>' +
++        return '<div class="item"><div style="flex:1"><div class="nm">' + esc(T(it.name)) + '</div><div class="muted small">~' + r0(it.grams || 0) + ' ' + T('g') + '</div></div>' +
+           '<input type="number" inputmode="decimal" data-k="' + i + '" value="' + r0(it.kcal || 0) + '" style="width:90px"></div>';
+       }).join('') + '</div>' + mealSelect() + '<button class="btn block" style="margin-top:12px" id="pAdd">' + T("Hammasini qo'shish") + '</button>';
+       $('#pAdd', md).onclick = function () {
+diff -ruN a/tools/gen_frames.py b/tools/gen_frames.py
+--- a/tools/gen_frames.py
++++ b/tools/gen_frames.py
+@@ -10,11 +10,18 @@
+ if os.path.isdir(SRC):
+     from PIL import Image
+     for name in sorted(os.listdir(SRC)):
+-        m = re.match(r'^([a-z]+)_([12])\.(png|jpe?g|webp)$', name, re.I)
++        # .b64 - brauzer orqali matn ko'rinishida yuklangan rasm (masalan squat_1.webp.b64)
++        m = re.match(r'^([a-z]+)_([12])\.(png|jpe?g|webp)(\.b64)?$', name, re.I)
+         if not m:
+             print('O\'tkazib yuborildi (nomi mos emas):', name); continue
+         key, n = m.group(1).lower(), int(m.group(2))
+-        im = Image.open(os.path.join(SRC, name)).convert('RGB')
++        path = os.path.join(SRC, name)
++        if m.group(4):
++            import base64
++            src = io.BytesIO(base64.b64decode(re.sub(r'\s+', '', io.open(path, encoding='ascii').read())))
++        else:
++            src = path
++        im = Image.open(src).convert('RGB')
+         im.thumbnail((512, 512))
+         dst = '%s_%d.webp' % (key, n)
+         im.save(os.path.join(OUT, dst), 'WEBP', quality=80)
