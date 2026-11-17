@@ -1,0 +1,184 @@
+diff -ruN a/app/src/main/assets/www/anim.js b/app/src/main/assets/www/anim.js
+--- a/app/src/main/assets/www/anim.js
++++ b/app/src/main/assets/www/anim.js
+@@ -130,7 +130,14 @@
+   function pts() { return Array.prototype.map.call(arguments, function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' '); }
+ 
+   var live = [];
++  // Rasmli animatsiya: img/frames.js da shu mashq uchun 2 ta kadr bo'lsa, ular navbatma-navbat ko'rsatiladi
++  function frames(key) { var F = window.SIHAT_FRAMES || {}; return F[key] && F[key].length >= 2 ? F[key] : null; }
+   function svg(key, cls) {
++    var fr = frames(key);
++    if (fr) {
++      return '<div class="exanim exframes ' + (cls || '') + '" data-anim="' + key + '" aria-hidden="true">' +
++        '<img src="' + fr[0] + '" alt=""><img class="f2" src="' + fr[1] + '" alt=""></div>';
++    }
+     var def = EX[key]; if (!def) return '';
+     return '<svg class="exanim ' + (cls || '') + '" data-anim="' + key + '" viewBox="0 0 200 200" aria-hidden="true">' +
+       '<rect x="0" y="0" width="200" height="200" rx="22" class="bg"/>' +
+diff -ruN a/app/src/main/assets/www/app.js b/app/src/main/assets/www/app.js
+--- a/app/src/main/assets/www/app.js
++++ b/app/src/main/assets/www/app.js
+@@ -63,8 +63,10 @@
+   function vibrate(ms) { try { if (A && A.vibrate) A.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+ 
+   // ---------- Holat ----------
+-  var DEFAULT_MODEL = 'gemini-3.8-flash';
+-  var OLD_MODELS = { 'gemini-2.5-flash': 1, 'gemini-2.0-flash': 1, 'gemini-1.5-flash': 1 };
++  // Tez va bepul limiti katta "lite" model birinchi; band bo'lsa keyingisiga o'tiladi
++  var DEFAULT_MODEL = 'gemini-3.1-flash-lite';
++  var MODEL_CHAIN = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash'];
++  var OLD_MODELS = { 'gemini-2.5-flash': 1, 'gemini-2.0-flash': 1, 'gemini-1.5-flash': 1, 'gemini-3.8-flash': 1 };
+   var S = load();
+   function load() {
+     var def = {
+@@ -441,34 +443,50 @@
+       var prompt = 'Rasmdagi taomlarni aniqla va har birining taxminiy og\'irligi va ozuqaviy qiymatini hisobla. ' +
+         'Faqat JSON qaytar: {"items":[{"name":"taom nomi o\'zbek tilida lotin yozuvida","grams":0,"kcal":0,"protein":0,"fat":0,"carbs":0}]}. ' +
+         'O\'zbek milliy taomlarini (osh, somsa, lag\'mon, manti, sho\'rva va h.k.) to\'g\'ri nomla. Agar rasmda ovqat bo\'lmasa, items bo\'sh ro\'yxat bo\'lsin.';
+-      var retried = false;
++      // Modellar navbati: avval sozlamadagi model, keyin zaxiralar. Band/limit/javobsiz bo'lsa keyingisi.
++      var chain = [S.profile.model || DEFAULT_MODEL].concat(MODEL_CHAIN).filter(function (m, i, arr) { return m && arr.indexOf(m) === i; });
++      var idx = 0, lastErr = '';
++      function fail(msg) { $('#ps', md).textContent = T('Xato') + ': ' + msg; $('#pPick', md).disabled = false; $('#pShot', md).disabled = false; }
+       (function ask() {
+-      fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(S.profile.model || DEFAULT_MODEL) + ':generateContent', {
+-        method: 'POST',
+-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': S.profile.apiKey },
+-        body: JSON.stringify({
+-          contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: dataUrl.split(',')[1] } }] }],
+-          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+-        })
+-      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+-        .then(function (res) {
+-          if (!res.ok) {
+-            var msg = res.j && res.j.error && res.j.error.message || ('HTTP ' + res.status);
+-            // Model yopilgan bo'lsa, Google tavsiya qilgan yangi modelga o'zi o'tib, bir marta qayta urinadi
+-            var sug = /no longer available|not found|deprecated|retired/i.test(msg) && msg.match(/models\/(gemini-[a-z0-9.\-]+)/gi);
+-            if (sug && !retried) {
+-              var cand = sug.map(function (x) { return x.replace(/^models\//i, ''); }).filter(function (m) { return m !== S.profile.model; })[0];
+-              if (cand) { retried = true; S.profile.model = cand; save(); $('#ps', md).innerHTML = '<span class="spin"></span> ' + T('Yangi model') + ': ' + esc(cand); ask(); return; }
++        if (idx >= chain.length) return fail(lastErr || T("Hozir barcha modellar band. Birozdan keyin qayta urinib ko'ring."));
++        var model = chain[idx];
++        $('#ps', md).innerHTML = '<span class="spin"></span> ' + T('Tahlil qilinmoqda...') + (idx ? ' <span class="muted small">(' + esc(model) + ')</span>' : '');
++        var ctrl = window.AbortController ? new AbortController() : null, timedOut = false;
++        var to = setTimeout(function () { timedOut = true; if (ctrl) ctrl.abort(); }, 35000);
++        fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
++          method: 'POST',
++          signal: ctrl ? ctrl.signal : undefined,
++          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': S.profile.apiKey },
++          body: JSON.stringify({
++            contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: dataUrl.split(',')[1] } }] }],
++            generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
++          })
++        }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
++          .then(function (res) {
++            clearTimeout(to);
++            if (!res.ok) {
++              var msg = res.j && res.j.error && res.j.error.message || ('HTTP ' + res.status);
++              if (res.status === 400 && /api key|API_KEY/i.test(msg) || res.status === 403) {
++                return fail(T("Kalit noto'g'ri yoki faol emas. Sozlamalarni tekshiring.") + ' (' + msg + ')');
++              }
++              // Model yopilgan bo'lsa, Google tavsiya qilgan modelni navbatga qo'shamiz
++              var sug = /no longer available|deprecated|retired/i.test(msg) && msg.match(/models\/(gemini-[a-z0-9.\-]+)/gi);
++              if (sug) sug.forEach(function (x) { var m = x.replace(/^models\//i, ''); if (chain.indexOf(m) < 0) chain.splice(idx + 1, 0, m); });
++              lastErr = res.status === 429 ? T("Bugungi bepul limit tugadi. Ertaga qayta urinib ko'ring.") : msg;
++              idx++; return ask();
+             }
+-            if (res.status === 429) msg = T("Bugungi bepul limit tugadi. Ertaga qayta urinib ko'ring.");
+-            else if (res.status === 400 || res.status === 403) msg = T("Kalit noto'g'ri yoki faol emas. Sozlamalarni tekshiring.") + ' (' + msg + ')';
+-            throw new Error(msg);
+-          }
+-          var txt = res.j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join('');
+-          var data = JSON.parse(txt.replace(/^```json|```$/g, '').trim());
+-          showResult(data.items || []);
+-        })
+-        .catch(function (e) { $('#ps', md).textContent = T('Xato') + ': ' + (e.message || e); $('#pPick', md).disabled = false; });
++            var cand = res.j.candidates && res.j.candidates[0];
++            var txt = cand && cand.content && cand.content.parts ? cand.content.parts.map(function (p) { return p.text || ''; }).join('') : '';
++            var data;
++            try { data = JSON.parse(txt.replace(/^\s*```(json)?|```\s*$/g, '').trim()); } catch (e) { lastErr = T("Javobni o'qib bo'lmadi"); idx++; return ask(); }
++            if (S.profile.model !== model) { S.profile.model = model; save(); } // ishlagan modelni eslab qolamiz
++            showResult(data.items || []);
++          })
++          .catch(function (e) {
++            clearTimeout(to);
++            lastErr = timedOut ? T('Javob kelmadi (35 soniya)') : (e.message || String(e));
++            idx++; ask();
++          });
+       })();
+     }
+     function showResult(items) {
+diff -ruN a/app/src/main/assets/www/img/frames.js b/app/src/main/assets/www/img/frames.js
+--- a/app/src/main/assets/www/img/frames.js
++++ b/app/src/main/assets/www/img/frames.js
+@@ -0,0 +1,2 @@
++// Mashq rasmlari (GitHubda rasmlar/ papkasidan avtomatik yasaladi)
++window.SIHAT_FRAMES = window.SIHAT_FRAMES || {};
+diff -ruN a/app/src/main/assets/www/index.html b/app/src/main/assets/www/index.html
+--- a/app/src/main/assets/www/index.html
++++ b/app/src/main/assets/www/index.html
+@@ -28,6 +28,7 @@
+ 
+ <script src="i18n.js"></script>
+ <script src="data.js"></script>
++<script src="img/frames.js"></script>
+ <script src="anim.js"></script>
+ <script src="zxing.min.js"></script>
+ <script src="app.js"></script>
+diff -ruN a/app/src/main/assets/www/style.css b/app/src/main/assets/www/style.css
+--- a/app/src/main/assets/www/style.css
++++ b/app/src/main/assets/www/style.css
+@@ -132,3 +132,12 @@
+ .vrow .play { width: 36px; height: 36px; border-radius: 50%; background: #fdeaea; color: #e33; display: grid; place-items: center; font-size: 14px; flex: none; }
+ /* Yangilanish banneri */
+ .card.upd { border: 2px solid var(--brand); background: var(--brand-2); }
++/* Rasmli animatsiya (2 kadr) */
++.exframes { position: relative; border-radius: 16px; overflow: hidden; background: #fff; flex: none; }
++.exframes img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
++.exframes .f2 { animation: exf 1.6s steps(1, end) infinite; }
++.exframes.paused .f2 { animation-play-state: paused; }
++@keyframes exf { 0% { opacity: 0; } 50% { opacity: 1; } }
++.exframes.thumb { width: 72px; height: 72px; }
++.exframes.big { width: min(260px, 70vw); aspect-ratio: 1; margin: 10px auto 0; }
++.exframes.small-big { width: min(170px, 46vw); }
+diff -ruN a/app/src/main/java/uz/sihat/app/MainActivity.java b/app/src/main/java/uz/sihat/app/MainActivity.java
+--- a/app/src/main/java/uz/sihat/app/MainActivity.java
++++ b/app/src/main/java/uz/sihat/app/MainActivity.java
+@@ -402,6 +402,7 @@
+         if (path.endsWith(".js")) return "application/javascript";
+         if (path.endsWith(".css")) return "text/css";
+         if (path.endsWith(".png")) return "image/png";
++        if (path.endsWith(".webp")) return "image/webp";
+         if (path.endsWith(".svg")) return "image/svg+xml";
+         if (path.endsWith(".json")) return "application/json";
+         if (path.endsWith(".mp3")) return "audio/mpeg";
+diff -ruN a/tools/gen_frames.py b/tools/gen_frames.py
+--- a/tools/gen_frames.py
++++ b/tools/gen_frames.py
+@@ -0,0 +1,25 @@
++# rasmlar/<mashq>_1.(png|jpg|webp) va <mashq>_2.* fayllarini ilovaga tayyorlaydi:
++# 512px gacha kichraytiradi, WebP qiladi va img/frames.js ro'yxatini yozadi.
++import io, json, os, re, sys
++
++SRC = sys.argv[1] if len(sys.argv) > 1 else 'rasmlar'
++WWW = os.path.join(os.path.dirname(__file__), '..', 'app', 'src', 'main', 'assets', 'www')
++OUT = os.path.join(WWW, 'img')
++os.makedirs(OUT, exist_ok=True)
++frames = {}
++if os.path.isdir(SRC):
++    from PIL import Image
++    for name in sorted(os.listdir(SRC)):
++        m = re.match(r'^([a-z]+)_([12])\.(png|jpe?g|webp)$', name, re.I)
++        if not m:
++            print('O\'tkazib yuborildi (nomi mos emas):', name); continue
++        key, n = m.group(1).lower(), int(m.group(2))
++        im = Image.open(os.path.join(SRC, name)).convert('RGB')
++        im.thumbnail((512, 512))
++        dst = '%s_%d.webp' % (key, n)
++        im.save(os.path.join(OUT, dst), 'WEBP', quality=80)
++        frames.setdefault(key, [None, None])[n - 1] = 'img/' + dst
++frames = {k: v for k, v in frames.items() if all(v)}
++with io.open(os.path.join(OUT, 'frames.js'), 'w', encoding='utf-8') as f:
++    f.write('// Avtomatik yasalgan: mashq rasmlari\nwindow.SIHAT_FRAMES = %s;\n' % json.dumps(frames, ensure_ascii=False))
++print('Rasmli mashqlar:', ', '.join(sorted(frames)) or 'yo\'q')
