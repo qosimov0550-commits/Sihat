@@ -8,6 +8,9 @@ on:
       - '.github/workflows/**'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,7 +35,19 @@ jobs:
         run: |
           pip install -q edge-tts
           python3 tools/gen_voice.py
-          ls -la app/src/main/assets/www/voice || true
+      - name: Imzo kaliti (Secrets -> SIHAT_KEY)
+        env:
+          SIHAT_KEY: ${{ secrets.SIHAT_KEY }}
+        run: |
+          if [ -n "$SIHAT_KEY" ]; then
+            printf '%s' "${SIHAT_KEY#*:}" | base64 -d > "$RUNNER_TEMP/sihat.jks"
+            echo "SIHAT_KS=$RUNNER_TEMP/sihat.jks" >> "$GITHUB_ENV"
+            echo "::add-mask::${SIHAT_KEY%%:*}"
+            echo "SIHAT_KS_PW=${SIHAT_KEY%%:*}" >> "$GITHUB_ENV"
+            echo "Doimiy kalit bilan imzolanadi"
+          else
+            echo "::warning::SIHAT_KEY topilmadi - vaqtinchalik kalit bilan imzolanadi, reliz chiqarilmaydi"
+          fi
       - name: APK yig'ish
         working-directory: build/Sihat
         run: |
@@ -40,7 +55,16 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/Sihat-v${{ github.run_number }}.apk"
       - uses: actions/upload-artifact@v5
         with:
           name: Sihat-apk
-          path: build/Sihat/app/build/outputs/apk/release/*.apk
+          path: Sihat-v${{ github.run_number }}.apk
+      - name: Reliz (ilova ichidan yangilanish uchun)
+        if: env.SIHAT_KS != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          gh release create "v${{ github.run_number }}" "Sihat-v${{ github.run_number }}.apk" \
+            --repo "${{ github.repository }}" --title "Sihat v${{ github.run_number }}" --notes "${NOTES:-Yangilanish}"
