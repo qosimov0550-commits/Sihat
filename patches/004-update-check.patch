@@ -1,0 +1,85 @@
+diff -ruN a/app/src/main/assets/www/app.js b/app/src/main/assets/www/app.js
+--- a/app/src/main/assets/www/app.js
++++ b/app/src/main/assets/www/app.js
+@@ -828,25 +828,31 @@
+   var UPDATE_API = 'https://api.github.com/repos/qosimov0550-commits/Sihat/releases/latest';
+   var Upd = { info: null, busy: false };
+   function appVersion() { try { return A && A.appVersion ? A.appVersion() : 0; } catch (e) { return 0; } }
++  var REPO_URL = 'https://github.com/qosimov0550-commits/Sihat';
++  function gotLatest(v, manual, now) {
++    if (v) S.updChecked = now;
++    S.updInfo = v ? { v: v, url: REPO_URL + '/releases/download/v' + v + '/Sihat-v' + v + '.apk' } : S.updInfo;
++    save();
++    Upd.info = S.updInfo && S.updInfo.v > appVersion() ? S.updInfo : null;
++    if (manual) toast(!v ? T("Tekshirib bo'lmadi, internetni tekshiring") : Upd.info ? T('Yangi versiya bor') + ': v' + Upd.info.v : T("Sizda eng so'nggi versiya"));
++    if (Upd.info && tab === 'home' && !modalStack.length) render();
++    if (manual && tab === 'settings') render();
++  }
+   function checkUpdate(manual) {
+     if (!A || !A.installUpdate) { if (manual) toast(T("Yangilanish faqat Android ilovada ishlaydi.")); return; }
+     var now = Date.now();
+     if (!manual && S.updChecked && now - S.updChecked < 6 * 3600 * 1000) { if (S.updInfo && S.updInfo.v > appVersion()) { Upd.info = S.updInfo; } return; }
+     if (manual) toast(T('Tekshirilmoqda...'));
++    if (A.checkLatest) {
++      // GitHub API limitisiz yo'l: reliz sahifasining yo'naltirishidan versiya raqami
++      window.sihatLatest = function (tag) { gotLatest(parseInt(String(tag || '').replace(/\D/g, ''), 10) || 0, manual, now); };
++      A.checkLatest(REPO_URL);
++      return;
++    }
+     fetch(UPDATE_API, { headers: { 'Accept': 'application/vnd.github+json' } })
+       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+-      .then(function (j) {
+-        var v = parseInt(String(j.tag_name || '').replace(/\D/g, ''), 10) || 0;
+-        var asset = (j.assets || []).filter(function (a) { return /\.apk$/i.test(a.name); })[0];
+-        S.updChecked = now;
+-        S.updInfo = asset ? { v: v, url: asset.browser_download_url, size: asset.size, notes: (j.body || '').slice(0, 400) } : null;
+-        save();
+-        Upd.info = S.updInfo && S.updInfo.v > appVersion() ? S.updInfo : null;
+-        if (manual) toast(Upd.info ? T('Yangi versiya bor') + ': v' + Upd.info.v : T("Sizda eng so'nggi versiya"));
+-        if (Upd.info && tab === 'home' && !modalStack.length) render();
+-        if (manual && tab === 'settings') render();
+-      })
+-      .catch(function (e) { if (manual) toast(T('Tekshirib bo\'lmadi') + ': ' + (e.message || e)); });
++      .then(function (j) { gotLatest(parseInt(String(j.tag_name || '').replace(/\D/g, ''), 10) || 0, manual, now); })
++      .catch(function () { gotLatest(0, manual, now); });
+   }
+   function updateBanner() {
+     if (!Upd.info) return '';
+diff -ruN a/app/src/main/java/uz/sihat/app/MainActivity.java b/app/src/main/java/uz/sihat/app/MainActivity.java
+--- a/app/src/main/java/uz/sihat/app/MainActivity.java
++++ b/app/src/main/java/uz/sihat/app/MainActivity.java
+@@ -171,6 +171,24 @@
+         else registerReceiver(installReceiver, f);
+     }
+ 
++    /** Eng so'nggi reliz tegini (masalan "v7") API'siz aniqlaydi: /releases/latest -> /releases/tag/v7 yo'naltirishidan. */
++    private void checkLatest(String repoUrl) {
++        new Thread(() -> {
++            String tag = "";
++            try {
++                HttpURLConnection c = (HttpURLConnection) new URL(repoUrl + "/releases/latest").openConnection();
++                c.setInstanceFollowRedirects(false);
++                c.setRequestMethod("HEAD");
++                c.setConnectTimeout(15000);
++                c.setReadTimeout(15000);
++                String loc = c.getHeaderField("Location");
++                c.disconnect();
++                if (loc != null && loc.contains("/releases/tag/")) tag = loc.substring(loc.lastIndexOf('/') + 1);
++            } catch (Exception ignored) { }
++            js("window.sihatLatest && window.sihatLatest(" + jsStr(tag) + ")");
++        }).start();
++    }
++
+     private void downloadAndInstall(String url) {
+         new Thread(() -> {
+             HttpURLConnection con = null;
+@@ -589,6 +607,9 @@
+         public void installUpdate(String url) { downloadAndInstall(url); }
+ 
+         @JavascriptInterface
++        public void checkLatest(String repoUrl) { MainActivity.this.checkLatest(repoUrl); }
++
++        @JavascriptInterface
+         public boolean ttsSpeak(String text) {
+             if (tts == null || !ttsUz) return false;
+             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sihat");
