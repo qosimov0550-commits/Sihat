@@ -1,0 +1,65 @@
+--- a/app/src/main/assets/www/app.js
++++ b/app/src/main/assets/www/app.js
+@@ -63,10 +63,12 @@
+   function vibrate(ms) { try { if (A && A.vibrate) A.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+ 
+   // ---------- Holat ----------
++  var DEFAULT_MODEL = 'gemini-3.8-flash';
++  var OLD_MODELS = { 'gemini-2.5-flash': 1, 'gemini-2.0-flash': 1, 'gemini-1.5-flash': 1 };
+   var S = load();
+   function load() {
+     var def = {
+-      profile: { sex: 'm', age: 30, height: 175, goalWeight: 70, stepGoal: 8000, kcalManual: 0, model: 'gemini-2.5-flash', apiKey: '', voice: true },
++      profile: { sex: 'm', age: 30, height: 175, goalWeight: 70, stepGoal: 8000, kcalManual: 0, model: DEFAULT_MODEL, apiKey: '', voice: true },
+       script: 'cyr', weights: [], foods: {}, workouts: [], onboarded: false, plan: null
+     };
+     try {
+@@ -74,6 +76,7 @@
+       if (!s) return def;
+       for (var k in def) if (!(k in s)) s[k] = def[k];
+       for (var p in def.profile) if (!(p in s.profile)) s.profile[p] = def.profile[p];
++      if (OLD_MODELS[s.profile.model]) s.profile.model = DEFAULT_MODEL; // Google yopgan eski modellar
+       return s;
+     } catch (e) { return def; }
+   }
+@@ -437,7 +440,9 @@
+       var prompt = 'Rasmdagi taomlarni aniqla va har birining taxminiy og\'irligi va ozuqaviy qiymatini hisobla. ' +
+         'Faqat JSON qaytar: {"items":[{"name":"taom nomi o\'zbek tilida lotin yozuvida","grams":0,"kcal":0,"protein":0,"fat":0,"carbs":0}]}. ' +
+         'O\'zbek milliy taomlarini (osh, somsa, lag\'mon, manti, sho\'rva va h.k.) to\'g\'ri nomla. Agar rasmda ovqat bo\'lmasa, items bo\'sh ro\'yxat bo\'lsin.';
+-      fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(S.profile.model || 'gemini-2.5-flash') + ':generateContent', {
++      var retried = false;
++      (function ask() {
++      fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(S.profile.model || DEFAULT_MODEL) + ':generateContent', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': S.profile.apiKey },
+         body: JSON.stringify({
+@@ -448,6 +453,12 @@
+         .then(function (res) {
+           if (!res.ok) {
+             var msg = res.j && res.j.error && res.j.error.message || ('HTTP ' + res.status);
++            // Model yopilgan bo'lsa, Google tavsiya qilgan yangi modelga o'zi o'tib, bir marta qayta urinadi
++            var sug = /no longer available|not found|deprecated|retired/i.test(msg) && msg.match(/models\/(gemini-[a-z0-9.\-]+)/gi);
++            if (sug && !retried) {
++              var cand = sug.map(function (x) { return x.replace(/^models\//i, ''); }).filter(function (m) { return m !== S.profile.model; })[0];
++              if (cand) { retried = true; S.profile.model = cand; save(); $('#ps', md).innerHTML = '<span class="spin"></span> ' + T('Yangi model') + ': ' + esc(cand); ask(); return; }
++            }
+             if (res.status === 429) msg = T("Bugungi bepul limit tugadi. Ertaga qayta urinib ko'ring.");
+             else if (res.status === 400 || res.status === 403) msg = T("Kalit noto'g'ri yoki faol emas. Sozlamalarni tekshiring.") + ' (' + msg + ')';
+             throw new Error(msg);
+@@ -457,6 +468,7 @@
+           showResult(data.items || []);
+         })
+         .catch(function (e) { $('#ps', md).textContent = T('Xato') + ': ' + (e.message || e); $('#pPick', md).disabled = false; });
++      })();
+     }
+     function showResult(items) {
+       if (!items.length) { $('#ps', md).textContent = T('Rasmda taom aniqlanmadi.'); $('#pPick', md).disabled = false; return; }
+@@ -752,7 +764,7 @@
+     $('#sSave', v).onclick = function () { readProfile(v); save(); render(); toast(T('Saqlandi')); };
+     $$('#sVoice button', v).forEach(function (b) { b.onclick = function () { S.profile.voice = b.getAttribute('data-v') === '1'; save(); render(); }; });
+     $('#sVTest', v).onclick = function () { if (!Coach.on()) { toast(T("Avval ovozni yoqing")); return; } if (!Coach.say(['ready', 'ex_squat', 'n3', 'n2', 'n1', 'start'])) toast(T("Telefonda o'zbekcha ovoz topilmadi")); };
+-    $('#sKeySave', v).onclick = function () { S.profile.apiKey = $('#sKey', v).value.trim(); S.profile.model = $('#sModel', v).value.trim() || 'gemini-2.5-flash'; save(); toast(T('Saqlandi')); };
++    $('#sKeySave', v).onclick = function () { S.profile.apiKey = $('#sKey', v).value.trim(); S.profile.model = $('#sModel', v).value.trim() || DEFAULT_MODEL; save(); toast(T('Saqlandi')); };
+     $('#sKeyGet', v).onclick = function () { openUrl('https://aistudio.google.com/apikey'); };
+     $('#sExp', v).onclick = function () {
+       var data = JSON.stringify(S); var md = modal(T('Nusxa olish'), '<div class="muted small">' + T("Matnni nusxalab, Telegram'dagi «Saqlangan xabarlar»ga yuboring.") + '</div>' +
