@@ -1,0 +1,320 @@
+diff -ruN a/app/build.gradle b/app/build.gradle
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -10,16 +10,29 @@
+         applicationId "uz.sihat.app"
+         minSdk 26
+         targetSdk 35
+-        versionCode 1
+-        versionName "1.0"
++        // GitHub'da har yig'ishda raqam o'sib boradi (yangilanish shu raqam bilan aniqlanadi)
++        versionCode((System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger())
++        versionName "1." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
++    }
++
++    // Doimiy imzo kaliti GitHub Secrets'dan keladi (SIHAT_KS = fayl yo'li, SIHAT_KS_PW = parol).
++    // Bir xil kalit bilan imzolangan yangi APK eskisining ustidan ma'lumotlar saqlangan holda o'rnatiladi.
++    def ks = System.getenv("SIHAT_KS")
++    signingConfigs {
++        sihat {
++            if (ks) {
++                storeFile file(ks)
++                storePassword System.getenv("SIHAT_KS_PW")
++                keyAlias "sihat"
++                keyPassword System.getenv("SIHAT_KS_PW")
++            }
++        }
+     }
+ 
+     buildTypes {
+         release {
+             minifyEnabled false
+-            // Shaxsiy foydalanish uchun: release ham debug kalit bilan imzolanadi,
+-            // shunda APK'ni telefonga to'g'ridan-to'g'ri o'rnatish mumkin.
+-            signingConfig signingConfigs.debug
++            signingConfig ks ? signingConfigs.sihat : signingConfigs.debug
+         }
+     }
+ 
+diff -ruN a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -6,6 +6,8 @@
+     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+     <uses-permission android:name="android.permission.VIBRATE" />
+     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
++    <!-- Ilova o'zini yangilashi uchun (har safar Android tasdiq so'raydi) -->
++    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+ 
+     <!-- Android 11+: telefondagi ovoz (TTS) dvigatelini ko'rish uchun -->
+     <queries>
+diff -ruN a/app/src/main/assets/www/app.js b/app/src/main/assets/www/app.js
+--- a/app/src/main/assets/www/app.js
++++ b/app/src/main/assets/www/app.js
+@@ -145,7 +145,7 @@
+     var k = dkey(), st = stepsToday(), steps = st == null ? 0 : st, goal = kcalGoal(), eaten = r0(eatenOf(k));
+     var burned = r0(burnedOf(k, steps)), left = goal - eaten + burned, m = macrosOf(k);
+     var w = lastWeight(), first = S.weights.length ? S.weights[0].kg : 0;
+-    var h = '';
++    var h = updateBanner();
+     h += '<div class="card"><div class="row">' +
+       '<div style="position:relative">' + ring(eaten, goal + burned, eaten > goal + burned ? '#e8873a' : '#0f9d6b') +
+       '<div style="position:absolute;inset:0;display:grid;place-items:center;text-align:center"><div><div class="mid">' + Math.abs(left) +
+@@ -182,6 +182,7 @@
+     return h;
+   }
+   bind.home = function (v) {
++    var u = $('#updGo', v); if (u) u.onclick = startUpdate;
+     var g = $('#goTrain', v); if (g) g.onclick = function () { go('train'); };
+     var p = $('#stepPerm', v); if (p) p.onclick = function () { A.requestStepPermission(); };
+     var c = $('#stepChart', v);
+@@ -739,7 +740,7 @@
+   }
+   function viewSettings() {
+     var p = S.profile;
+-    return '<h2>' + T('Yozuv') + '</h2><div class="card"><div class="seg" id="sScr"><button data-v="lat" class="' + (S.script === 'lat' ? 'on' : '') + '">Lotin</button>' +
++    return updateBanner() + '<h2>' + T('Yozuv') + '</h2><div class="card"><div class="seg" id="sScr"><button data-v="lat" class="' + (S.script === 'lat' ? 'on' : '') + '">Lotin</button>' +
+       '<button data-v="cyr" class="' + (S.script === 'cyr' ? 'on' : '') + '">Кирилл</button></div></div>' +
+       '<h2>' + T('Ovozli murabbiy') + '</h2><div class="card"><div class="seg" id="sVoice"><button data-v="1" class="' + (p.voice !== false ? 'on' : '') + '">' + T('Yoqilgan') + '</button>' +
+       '<button data-v="0" class="' + (p.voice === false ? 'on' : '') + '">' + T("O'chirilgan") + '</button></div>' +
+@@ -753,6 +754,8 @@
+       '<label class="f">' + T('Kalit ([[API key]])') + '</label><input type="password" id="sKey" value="' + esc(p.apiKey) + '" placeholder="AIza...">' +
+       '<label class="f">' + T('Model') + '</label><input type="text" id="sModel" value="' + esc(p.model) + '">' +
+       '<div class="grid2" style="margin-top:12px"><button class="btn" id="sKeySave">' + T('Saqlash') + '</button><button class="btn alt" id="sKeyGet">' + T('Kalit olish') + '</button></div></div>' +
++      '<h2>' + T('Ilova versiyasi') + '</h2><div class="card"><div class="row between"><span>' + (appVersion() ? 'v' + appVersion() : T("Brauzer rejimi")) + '</span>' +
++      '<button class="btn alt" id="sUpd">' + T('Yangilanishni tekshirish') + '</button></div></div>' +
+       '<h2>' + T('Zaxira nusxa') + '</h2><div class="card"><div class="muted small">' + T("Telefon almashtirsangiz, ma'lumotlarni shu yerdan ko'chirib oling.") + '</div>' +
+       '<div class="grid2" style="margin-top:10px"><button class="btn alt" id="sExp">' + T('Nusxa olish') + '</button><button class="btn alt" id="sImp">' + T('Tiklash') + '</button></div>' +
+       '<button class="btn danger block" style="margin-top:10px" id="sWipe">' + T("Hamma ma'lumotni o'chirish") + '</button></div>' +
+@@ -766,6 +769,8 @@
+     $('#sVTest', v).onclick = function () { if (!Coach.on()) { toast(T("Avval ovozni yoqing")); return; } if (!Coach.say(['ready', 'ex_squat', 'n3', 'n2', 'n1', 'start'])) toast(T("Telefonda o'zbekcha ovoz topilmadi")); };
+     $('#sKeySave', v).onclick = function () { S.profile.apiKey = $('#sKey', v).value.trim(); S.profile.model = $('#sModel', v).value.trim() || DEFAULT_MODEL; save(); toast(T('Saqlandi')); };
+     $('#sKeyGet', v).onclick = function () { openUrl('https://aistudio.google.com/apikey'); };
++    var u = $('#updGo', v); if (u) u.onclick = startUpdate;
++    var uc = $('#sUpd', v); if (uc) uc.onclick = function () { checkUpdate(true); };
+     $('#sExp', v).onclick = function () {
+       var data = JSON.stringify(S); var md = modal(T('Nusxa olish'), '<div class="muted small">' + T("Matnni nusxalab, Telegram'dagi «Saqlangan xabarlar»ga yuboring.") + '</div>' +
+         '<textarea id="eT" readonly>' + esc(data) + '</textarea><button class="btn block" style="margin-top:10px" id="eC">' + T('Nusxalash') + '</button>');
+@@ -819,6 +824,48 @@
+   // Android tomonidan qadamlar yangilanganda chaqiriladi
+   window.sihatStepsChanged = function () { if (tab === 'home' && !modalStack.length) render(); };
+ 
++  // ---------- Yangilanish (GitHub Releases) ----------
++  var UPDATE_API = 'https://api.github.com/repos/qosimov0550-commits/Sihat/releases/latest';
++  var Upd = { info: null, busy: false };
++  function appVersion() { try { return A && A.appVersion ? A.appVersion() : 0; } catch (e) { return 0; } }
++  function checkUpdate(manual) {
++    if (!A || !A.installUpdate) { if (manual) toast(T("Yangilanish faqat Android ilovada ishlaydi.")); return; }
++    var now = Date.now();
++    if (!manual && S.updChecked && now - S.updChecked < 6 * 3600 * 1000) { if (S.updInfo && S.updInfo.v > appVersion()) { Upd.info = S.updInfo; } return; }
++    if (manual) toast(T('Tekshirilmoqda...'));
++    fetch(UPDATE_API, { headers: { 'Accept': 'application/vnd.github+json' } })
++      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
++      .then(function (j) {
++        var v = parseInt(String(j.tag_name || '').replace(/\D/g, ''), 10) || 0;
++        var asset = (j.assets || []).filter(function (a) { return /\.apk$/i.test(a.name); })[0];
++        S.updChecked = now;
++        S.updInfo = asset ? { v: v, url: asset.browser_download_url, size: asset.size, notes: (j.body || '').slice(0, 400) } : null;
++        save();
++        Upd.info = S.updInfo && S.updInfo.v > appVersion() ? S.updInfo : null;
++        if (manual) toast(Upd.info ? T('Yangi versiya bor') + ': v' + Upd.info.v : T("Sizda eng so'nggi versiya"));
++        if (Upd.info && tab === 'home' && !modalStack.length) render();
++        if (manual && tab === 'settings') render();
++      })
++      .catch(function (e) { if (manual) toast(T('Tekshirib bo\'lmadi') + ': ' + (e.message || e)); });
++  }
++  function updateBanner() {
++    if (!Upd.info) return '';
++    return '<div class="card upd"><div class="row between"><div><b>\ud83d\udd04 ' + T('Yangi versiya bor') + ' (v' + Upd.info.v + ')</b>' +
++      '<div class="muted small" id="updSt">' + T("Bir tugma bilan yangilanadi, ma'lumotlaringiz saqlanadi.") + '</div></div>' +
++      '<button class="btn" id="updGo"' + (Upd.busy ? ' disabled' : '') + '>' + T('Yangilash') + '</button></div></div>';
++  }
++  function startUpdate() {
++    if (!Upd.info || Upd.busy) return;
++    Upd.busy = true;
++    var st = $('#updSt'); if (st) st.textContent = T('Yuklanmoqda...');
++    var b = $('#updGo'); if (b) b.disabled = true;
++    A.installUpdate(Upd.info.url);
++  }
++  // Android tomonidan chaqiriladi
++  window.sihatUpdateProgress = function (pct) { var st = $('#updSt'); if (st) st.textContent = T('Yuklanmoqda') + ': ' + pct + '%'; };
++  window.sihatUpdateReady = function () { var st = $('#updSt'); if (st) st.textContent = T("\u00abO'rnatish\u00bb tugmasini bosing."); Upd.busy = false; var b = $('#updGo'); if (b) b.disabled = false; };
++  window.sihatUpdateError = function (msg) { Upd.busy = false; var b = $('#updGo'); if (b) b.disabled = false; var st = $('#updSt'); if (st) st.textContent = T('Xato') + ': ' + msg; toast(T('Yangilashda xato') + ': ' + msg); };
++
+   // ---------- Birinchi ishga tushirish ----------
+   function onboard() {
+     if (S.onboarded) return;
+@@ -841,4 +888,5 @@
+ 
+   render();
+   onboard();
++  setTimeout(function () { checkUpdate(false); }, 1500);
+ })();
+diff -ruN a/app/src/main/assets/www/style.css b/app/src/main/assets/www/style.css
+--- a/app/src/main/assets/www/style.css
++++ b/app/src/main/assets/www/style.css
+@@ -130,3 +130,5 @@
+ /* Video mashg'ulotlar */
+ .vrow { cursor: pointer; }
+ .vrow .play { width: 36px; height: 36px; border-radius: 50%; background: #fdeaea; color: #e33; display: grid; place-items: center; font-size: 14px; flex: none; }
++/* Yangilanish banneri */
++.card.upd { border: 2px solid var(--brand); background: var(--brand-2); }
+diff -ruN a/app/src/main/java/uz/sihat/app/MainActivity.java b/app/src/main/java/uz/sihat/app/MainActivity.java
+--- a/app/src/main/java/uz/sihat/app/MainActivity.java
++++ b/app/src/main/java/uz/sihat/app/MainActivity.java
+@@ -4,8 +4,13 @@
+ import android.app.Activity;
+ import android.content.ClipData;
+ import android.content.ClipboardManager;
++import android.app.PendingIntent;
++import android.content.BroadcastReceiver;
+ import android.content.Context;
+ import android.content.Intent;
++import android.content.IntentFilter;
++import android.content.pm.PackageInfo;
++import android.content.pm.PackageInstaller;
+ import android.content.SharedPreferences;
+ import android.content.pm.ActivityInfo;
+ import android.content.pm.PackageManager;
+@@ -42,6 +47,9 @@
+ import java.io.ByteArrayInputStream;
+ import java.io.IOException;
+ import java.io.InputStream;
++import java.io.OutputStream;
++import java.net.HttpURLConnection;
++import java.net.URL;
+ import java.util.ArrayList;
+ import java.util.Calendar;
+ import java.util.Date;
+@@ -86,6 +94,10 @@
+     private TextToSpeech tts;
+     private boolean ttsUz = false;
+ 
++    // Yangilanish (GitHub Releases -> PackageInstaller)
++    private static final String ACTION_INSTALL = "uz.sihat.app.INSTALL_STATUS";
++    private BroadcastReceiver installReceiver;
++
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+         super.onCreate(savedInstanceState);
+@@ -116,6 +128,99 @@
+ 
+         if (stepSensor != null && !needsStepPermission()) StepJob.schedule(this);
+         initTts();
++        registerInstallReceiver();
++    }
++
++    // ---------- Yangilanish ----------
++    private void js(String code) { runOnUiThread(() -> web.evaluateJavascript(code, null)); }
++
++    private static String jsStr(String s) {
++        if (s == null) s = "";
++        return "'" + s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ") + "'";
++    }
++
++    private int versionCode() {
++        try {
++            PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
++            return Build.VERSION.SDK_INT >= 28 ? (int) pi.getLongVersionCode() : pi.versionCode;
++        } catch (Exception e) {
++            return 0;
++        }
++    }
++
++    private void registerInstallReceiver() {
++        installReceiver = new BroadcastReceiver() {
++            @Override
++            public void onReceive(Context c, Intent i) {
++                int status = i.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
++                if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
++                    Intent confirm = i.getParcelableExtra(Intent.EXTRA_INTENT);
++                    if (confirm != null) {
++                        confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++                        try { startActivity(confirm); } catch (Exception e) { js("window.sihatUpdateError(" + jsStr(e.getMessage()) + ")"); }
++                    }
++                    js("window.sihatUpdateReady && window.sihatUpdateReady()");
++                } else if (status != PackageInstaller.STATUS_SUCCESS) {
++                    String msg = i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
++                    js("window.sihatUpdateError && window.sihatUpdateError(" + jsStr(msg == null ? ("status " + status) : msg) + ")");
++                }
++            }
++        };
++        IntentFilter f = new IntentFilter(ACTION_INSTALL);
++        if (Build.VERSION.SDK_INT >= 33) registerReceiver(installReceiver, f, Context.RECEIVER_NOT_EXPORTED);
++        else registerReceiver(installReceiver, f);
++    }
++
++    private void downloadAndInstall(String url) {
++        new Thread(() -> {
++            HttpURLConnection con = null;
++            PackageInstaller.Session session = null;
++            try {
++                String u = url;
++                for (int hop = 0; hop < 6; hop++) { // GitHub boshqa domenga yo'naltiradi
++                    con = (HttpURLConnection) new URL(u).openConnection();
++                    con.setInstanceFollowRedirects(false);
++                    con.setConnectTimeout(20000);
++                    con.setReadTimeout(30000);
++                    int code = con.getResponseCode();
++                    if (code >= 300 && code < 400) { u = con.getHeaderField("Location"); con.disconnect(); con = null; continue; }
++                    if (code != 200) throw new IOException("HTTP " + code);
++                    break;
++                }
++                if (con == null) throw new IOException("redirect");
++                long total = con.getContentLengthLong();
++
++                PackageInstaller pkgi = getPackageManager().getPackageInstaller();
++                PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
++                params.setAppPackageName(getPackageName());
++                int id = pkgi.createSession(params);
++                session = pkgi.openSession(id);
++                try (InputStream in = con.getInputStream(); OutputStream out = session.openWrite("sihat.apk", 0, total > 0 ? total : -1)) {
++                    byte[] buf = new byte[65536];
++                    long done = 0; int last = -1, n;
++                    while ((n = in.read(buf)) > 0) {
++                        out.write(buf, 0, n);
++                        done += n;
++                        if (total > 0) {
++                            int pct = (int) (done * 100 / total);
++                            if (pct != last) { last = pct; js("window.sihatUpdateProgress && window.sihatUpdateProgress(" + pct + ")"); }
++                        }
++                    }
++                    session.fsync(out);
++                }
++                Intent cb = new Intent(ACTION_INSTALL).setPackage(getPackageName());
++                int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
++                PendingIntent pi = PendingIntent.getBroadcast(this, id, cb, flags);
++                session.commit(pi.getIntentSender());
++                session.close();
++                session = null;
++            } catch (Exception e) {
++                if (session != null) { try { session.abandon(); } catch (Exception ignored) { } }
++                js("window.sihatUpdateError && window.sihatUpdateError(" + jsStr(String.valueOf(e.getMessage())) + ")");
++            } finally {
++                if (con != null) con.disconnect();
++            }
++        }).start();
+     }
+ 
+     // ---------- Ichki brauzer oynasi ----------
+@@ -397,6 +502,7 @@
+ 
+     @Override
+     protected void onDestroy() {
++        if (installReceiver != null) { try { unregisterReceiver(installReceiver); } catch (Exception ignored) { } installReceiver = null; }
+         if (tts != null) { try { tts.shutdown(); } catch (Exception ignored) { } tts = null; }
+         voiceQueue.clear();
+         if (player != null) { try { player.release(); } catch (Exception ignored) { } player = null; }
+@@ -477,6 +583,12 @@
+         }
+ 
+         @JavascriptInterface
++        public int appVersion() { return versionCode(); }
++
++        @JavascriptInterface
++        public void installUpdate(String url) { downloadAndInstall(url); }
++
++        @JavascriptInterface
+         public boolean ttsSpeak(String text) {
+             if (tts == null || !ttsUz) return false;
+             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sihat");
