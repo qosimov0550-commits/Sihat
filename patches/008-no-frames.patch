@@ -1,0 +1,11 @@
+--- a/app/src/main/assets/www/anim.js
++++ b/app/src/main/assets/www/anim.js
+@@ -193,7 +193,7 @@
+   // Rasmli animatsiya: img/frames.js da shu mashq uchun 2 ta kadr bo'lsa, ular navbatma-navbat ko'rsatiladi
+   function frames(key) { var F = window.SIHAT_FRAMES || {}; return F[key] && F[key].length >= 2 ? F[key] : null; }
+   function svg(key, cls) {
+-    var fr = frames(key);
++    var fr = window.SIHAT_USE_FRAMES ? frames(key) : null; // rasmlar o'chirilgan: hamma mashqda yangi qahramon
+     if (fr) {
+       return '<div class="exanim exframes ' + (cls || '') + '" data-anim="' + key + '" aria-hidden="true">' +
+         '<img src="' + fr[0] + '" alt=""><img class="f2" src="' + fr[1] + '" alt=""></div>';
