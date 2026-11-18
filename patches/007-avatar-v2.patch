@@ -1,0 +1,296 @@
+--- a/app/src/main/assets/www/anim.js
++++ b/app/src/main/assets/www/anim.js
+@@ -36,11 +36,11 @@
+   }
+ 
+   var EX = {
+-    jumping: { dur: 420, poses: [FRONT,
++    jumping: { dur: 420, front: true, poses: [FRONT,
+       { h: [100, 32], n: [100, 54], p: [100, 106], le: [80, 40], lh: [68, 18], re: [120, 40], rh: [132, 18],
+         lk: [82, 145], lf: [70, 183], rk: [118, 145], rf: [130, 183] }] },
+ 
+-    march: { dur: 450, poses: (function () {
++    march: { dur: 450, front: true, poses: (function () {
+       var a = { h: [100, 36], n: [100, 58], p: [100, 110], le: [88, 84], lh: [86, 106], re: [114, 78], rh: [110, 60],
+         lk: [93, 148], lf: [91, 185], rk: [108, 124], rf: [110, 158] };
+       return [a, mirror(a)];
+@@ -71,15 +71,15 @@
+       { h: [156, 152], n: [140, 158], p: [92, 168], le: [138, 183], lh: [162, 183], re: [141, 183], rh: [165, 183],
+         lk: [66, 175], lf: [40, 183], rk: [67, 175], rf: [41, 183] }] },
+ 
+-    crunch: { dur: 800, poses: [
++    crunch: { dur: 800, face: -1, poses: [
+       both({ h: [164, 174], n: [148, 178], p: [100, 178], e: [152, 160], a: [162, 166], k: [78, 148], f: [56, 183] }),
+       both({ h: [150, 146], n: [138, 160], p: [100, 178], e: [142, 140], a: [151, 148], k: [78, 148], f: [56, 183] })] },
+ 
+-    legraise: { dur: 1100, poses: [
++    legraise: { dur: 1100, face: -1, poses: [
+       both({ h: [166, 175], n: [150, 178], p: [100, 178], e: [125, 182], a: [100, 183], k: [70, 180], f: [40, 182] }),
+       both({ h: [166, 175], n: [150, 178], p: [100, 178], e: [125, 182], a: [100, 183], k: [98, 144], f: [96, 110] })] },
+ 
+-    bridge: { dur: 1000, poses: [
++    bridge: { dur: 1000, face: -1, poses: [
+       both({ h: [166, 177], n: [150, 180], p: [110, 179], e: [130, 183], a: [110, 183], k: [82, 150], f: [70, 183] }),
+       both({ h: [166, 177], n: [150, 178], p: [112, 150], e: [130, 183], a: [110, 183], k: [82, 147], f: [70, 183] })] },
+ 
+@@ -100,7 +100,7 @@
+       both({ h: [68, 80], n: [66, 100], p: [66, 145], e: [80, 122], a: [96, 140], k: [104, 145], f: [104, 185] }),
+       both({ h: [68, 79], n: [66, 99], p: [66, 145], e: [80, 121], a: [96, 139], k: [104, 145], f: [104, 185] })] },
+ 
+-    stretch: { dur: 1300, poses: (function () {
++    stretch: { dur: 1300, front: true, poses: (function () {
+       var up = { h: [100, 36], n: [100, 58], p: [100, 110], le: [92, 34], lh: [97, 10], re: [108, 34], rh: [103, 10],
+         lk: [93, 148], lf: [91, 185], rk: [107, 148], rf: [109, 185] };
+       var right = { h: [119, 44], n: [110, 63], p: [100, 110], le: [113, 39], lh: [133, 22], re: [126, 46], rh: [143, 32],
+@@ -108,7 +108,7 @@
+       return [up, right, up, mirror(right)];
+     })() },
+ 
+-    sideplank: { dur: 1400, poses: [
++    sideplank: { dur: 1400, faceFront: true, poses: [
+       { h: [158, 126], n: [142, 136], p: [92, 160], le: [140, 112], lh: [140, 88], re: [142, 183], rh: [164, 183],
+         lk: [66, 172], lf: [40, 183], rk: [67, 174], rf: [41, 184] },
+       { h: [158, 129], n: [142, 139], p: [92, 166], le: [140, 115], lh: [140, 91], re: [142, 183], rh: [164, 183],
+@@ -127,7 +127,67 @@
+     return r;
+   }
+ 
+-  function pts() { return Array.prototype.map.call(arguments, function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' '); }
++  // ---- Avatar Renderer V2: "Sihat" qahramoni (bosh, ko'z, tabassum, futbolka, shortik, krossovka) ----
++  // Har bir qism: [nom, A bo'g'in, B bo'g'in, t0, t1, qalinlik, sinf]. Qism A->B kesmaning t0..t1 bo'lagi.
++  function limb(side, sh, el, hd, hip, kn, ft) { // side: 'far' | 'near'
++    return [
++      [side + 'Thigh', hip, kn, 0, 1, 12, 'skin ' + side],
++      [side + 'Shin', kn, ft, 0, 1, 10, 'skin ' + side],
++      [side + 'Shoe', ft, ft, 0, 0, 8, 'shoe ' + side],
++      [side + 'Shorts', hip, kn, 0, 0.58, 16, 'shorts ' + side]
++    ];
++  }
++  function arm(side, el, hd) {
++    return [
++      [side + 'Upper', 'n', el, 0, 1, 9, 'skin ' + side],
++      [side + 'Fore', el, hd, 0, 1, 8, 'skin ' + side],
++      [side + 'Hand', hd, hd, 0, 0, 10, 'skin ' + side],
++      [side + 'Sleeve', 'n', el, 0, 0.5, 13, 'shirt ' + side]
++    ];
++  }
++  var PARTS = [].concat(
++    arm('far', 'le', 'lh'),
++    limb('far', 0, 0, 0, 'p', 'lk', 'lf'),
++    [['torso', 'n', 'p', 0, 1, 24, 'shirt'], ['hips', 'n', 'p', 0.8, 1, 25, 'shorts']],
++    limb('near', 0, 0, 0, 'p', 'rk', 'rf')
++  );
++  var TOP = arm('near', 're', 'rh'); // bosh ustidan chiziladi
++  // Mushak qatlami: mushak -> tana qismlari
++  var MUS = {
++    quads: [['p', 'lk', .15, .9, 9], ['p', 'rk', .15, .9, 9]],
++    hamstrings: [['p', 'lk', .2, .85, 7], ['p', 'rk', .2, .85, 7]],
++    glutes: [['p', 'p', 0, 0, 20]],
++    calves: [['lk', 'lf', .15, .7, 7], ['rk', 'rf', .15, .7, 7]],
++    chest: [['n', 'p', .05, .38, 16]],
++    core: [['n', 'p', .4, .78, 15]],
++    obliques: [['n', 'p', .4, .78, 18]],
++    back: [['n', 'p', .1, .7, 12]],
++    shoulders: [['n', 'le', .12, .12, 13], ['n', 're', .12, .12, 13]],
++    triceps: [['n', 'le', .2, .85, 7], ['n', 're', .2, .85, 7]],
++    biceps: [['n', 'le', .2, .85, 7], ['n', 're', .2, .85, 7]]
++  };
++  function meta(key) { return (window.EX_META || {})[key] || null; }
++
++  function segs(list, out) {
++    list.forEach(function (q) {
++      out.push('<line class="o ' + q[6] + '" stroke-width="' + (q[5] + 4) + '"/><line class="' + q[6] + '" stroke-width="' + q[5] + '"/>');
++    });
++  }
++  function headMarkup(front) {
++    return '<g class="hd"><circle r="14" class="skin hdc"/>' +
++      (front
++        ? '<path class="hair" d="M-14 -1A14 14 0 0 1 14 -1C9 -9 -9 -9 -14 -1Z"/><circle class="eye" cx="-5" cy="-1" r="1.9"/><circle class="eye" cx="5" cy="-1" r="1.9"/>' +
++          '<circle class="cheek" cx="-8.5" cy="4" r="2.6"/><circle class="cheek" cx="8.5" cy="4" r="2.6"/><path class="smile" d="M-4.5 5.2Q0 9.2 4.5 5.2"/>'
++        : '<path class="hair" d="M-13.6 3A14 14 0 0 1 11 -8.8C5 -6 -1 -6.5 -5 -1.5C-7.5 1.5 -10 3.8 -13.6 3Z"/><circle class="eye" cx="6.5" cy="-1" r="1.9"/>' +
++          '<circle class="cheek" cx="3.5" cy="4.5" r="2.6"/><path class="smile" d="M4.5 6Q8.5 8 11.3 4.2"/>') +
++      '</g>';
++  }
++
++  function pts(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
++  function setLine(l, a, b) {
++    l.setAttribute('x1', a[0].toFixed(1)); l.setAttribute('y1', a[1].toFixed(1));
++    l.setAttribute('x2', b[0].toFixed(1)); l.setAttribute('y2', b[1].toFixed(1));
++  }
+ 
+   var live = [];
+   // Rasmli animatsiya: img/frames.js da shu mashq uchun 2 ta kadr bo'lsa, ular navbatma-navbat ko'rsatiladi
+@@ -139,28 +199,59 @@
+         '<img src="' + fr[0] + '" alt=""><img class="f2" src="' + fr[1] + '" alt=""></div>';
+     }
+     var def = EX[key]; if (!def) return '';
+-    return '<svg class="exanim ' + (cls || '') + '" data-anim="' + key + '" viewBox="0 0 200 200" aria-hidden="true">' +
++    var big = /\bbig\b/.test(cls || ''), m = meta(key), o = [];
++    segs(PARTS, o);
++    var mus = [];
++    if (big && m && m.muscles) m.muscles.forEach(function (k) { (MUS[k] || []).forEach(function (q) { mus.push(q); }); });
++    var musHtml = mus.map(function (q) { return '<line class="mus" stroke-width="' + q[4] + '"/>'; }).join('');
++    var top = []; segs(TOP, top);
++    return '<svg class="exanim av2 ' + (def.front ? 'front ' : '') + (cls || '') + '" data-anim="' + key + '" viewBox="0 0 200 200" aria-hidden="true">' +
+       '<rect x="0" y="0" width="200" height="200" rx="22" class="bg"/>' +
+       (def.wall ? '<line x1="' + def.wall + '" y1="40" x2="' + def.wall + '" y2="187" class="wall"/>' : '') +
+-      '<line x1="18" y1="188" x2="182" y2="188" class="floor"/>' +
+-      '<polyline class="far"/><polyline class="far"/>' +
+-      '<polyline class="body"/><polyline class="near"/><polyline class="near"/>' +
+-      '<circle r="12" class="head"/></svg>';
++      '<ellipse class="shadow" cx="100" cy="189" rx="40" ry="4"/><line x1="18" y1="188" x2="182" y2="188" class="floor"/>' +
++      '<g class="pp">' + o.join('') + '</g>' + headMarkup(def.front || def.faceFront) +
++      '<g class="pt">' + top.join('') + '</g><g class="pm">' + musHtml + '</g></svg>';
++  }
++
++  function placeSeg(lo, lf, q, pose, def) {
++    var A = pose[q[1]], B = pose[q[2]], a = pts(A, B, q[3]), b = pts(A, B, q[4]);
++    if (q[6].indexOf('shoe') === 0) { // krossovka: boldirga perpendikulyar, oldinga qarab
++      var kn = q[0].indexOf('far') === 0 ? pose.lk : pose.rk, dx = B[0] - kn[0], dy = B[1] - kn[1], L = Math.sqrt(dx * dx + dy * dy) || 1;
++      var ux, uy;
++      if (def.front) { ux = (B[0] < pose.p[0] ? -1 : 1) * 0.5; uy = 0; a = [B[0] - ux * 7, B[1] + 1]; b = [B[0] + ux * 9, B[1] + 1]; }
++      else {
++        var f = def.face || 1; ux = dy / L * f; uy = -dx / L * f;
++        if (B[1] > 178 && uy < 0) { ux = ux < 0 ? -1 : 1; uy = 0; }
++        a = [B[0] - ux * 2, B[1] - uy * 2]; b = [B[0] + ux * 10, B[1] + uy * 10];
++      }
++    } else if (q[1] === q[2]) { b = [a[0] + 0.01, a[1]]; }
++    setLine(lo, a, b); setLine(lf, a, b);
+   }
+ 
+   function paint(el, pose) {
+-    var l = el.__parts;
+-    if (!l) {
+-      var pl = el.querySelectorAll('polyline');
+-      l = el.__parts = { farArm: pl[0], farLeg: pl[1], body: pl[2], nearArm: pl[3], nearLeg: pl[4], head: el.querySelector('circle') };
++    var def = EX[el.getAttribute('data-anim')], c = el.__parts;
++    if (!c) {
++      c = el.__parts = {
++        pp: el.querySelectorAll('.pp line'), pt: el.querySelectorAll('.pt line'),
++        mus: el.querySelectorAll('.pm line'), head: el.querySelector('.hd'), shadow: el.querySelector('.shadow')
++      };
++      var m = meta(el.getAttribute('data-anim')), list = [];
++      if (m && m.muscles && c.mus.length) m.muscles.forEach(function (k) { (MUS[k] || []).forEach(function (q) { list.push(q); }); });
++      c.musList = list;
+     }
+-    l.farArm.setAttribute('points', pts(pose.n, pose.le, pose.lh));
+-    l.farLeg.setAttribute('points', pts(pose.p, pose.lk, pose.lf));
+-    l.body.setAttribute('points', pts(pose.n, pose.p));
+-    l.nearArm.setAttribute('points', pts(pose.n, pose.re, pose.rh));
+-    l.nearLeg.setAttribute('points', pts(pose.p, pose.rk, pose.rf));
+-    l.head.setAttribute('cx', pose.h[0].toFixed(1));
+-    l.head.setAttribute('cy', pose.h[1].toFixed(1));
++    PARTS.forEach(function (q, i) { placeSeg(c.pp[2 * i], c.pp[2 * i + 1], q, pose, def); });
++    TOP.forEach(function (q, i) { placeSeg(c.pt[2 * i], c.pt[2 * i + 1], q, pose, def); });
++    c.musList.forEach(function (q, i) {
++      var A = pose[q[0]], B = pose[q[1]], a = pts(A, B, q[2]), b = pts(A, B, q[3]);
++      if (q[0] === q[1] || q[2] === q[3]) b = [a[0] + 0.01, a[1]];
++      setLine(c.mus[i], a, b);
++    });
++    var ang = Math.atan2(pose.h[1] - pose.n[1], pose.h[0] - pose.n[0]) * 180 / Math.PI + 90;
++    if (def.front || def.faceFront) ang = ang * 0.5;
++    c.head.setAttribute('transform', 'translate(' + pose.h[0].toFixed(1) + ',' + pose.h[1].toFixed(1) + ') rotate(' + ang.toFixed(1) + ')' +
++      ((def.face || 1) < 0 && !def.faceFront ? ' scale(-1,1)' : ''));
++    var xs = [pose.lf[0], pose.rf[0], pose.p[0], pose.n[0]], mn = Math.min.apply(0, xs), mx = Math.max.apply(0, xs);
++    c.shadow.setAttribute('cx', ((mn + mx) / 2).toFixed(1)); c.shadow.setAttribute('rx', ((mx - mn) / 2 + 16).toFixed(1));
+   }
+ 
+   var running = false, start = 0;
+@@ -184,5 +275,5 @@
+       .observe(document.documentElement, { childList: true, subtree: true });
+   }
+ 
+-  window.ExAnim = { svg: svg, has: function (k) { return !!EX[k]; }, wake: wake, _poseAt: poseAt, _ex: EX };
++  window.__p = paint; window.ExAnim = { svg: svg, meta: meta, has: function (k) { return !!EX[k]; }, wake: wake, _poseAt: poseAt, _ex: EX };
+ })();
+--- a/app/src/main/assets/www/app.js
++++ b/app/src/main/assets/www/app.js
+@@ -574,10 +574,15 @@
+     }
+     return h;
+   }
++  function exMeta(k) {
++    var m = (window.EX_META || {})[k]; if (!m) return '';
++    return '<div class="exmeta"><span class="lv">' + T(LEVEL_NAMES[m.level] || '') + '</span>' +
++      m.muscles.map(function (x) { return '<span>' + T(MUSCLE_NAMES[x] || x) + '</span>'; }).join('') + '</div>';
++  }
+   function exRow(k, sec) {
+     var e = EXERCISES[k];
+     return '<div class="ex"><div class="exhead">' + ExAnim.svg(k, 'thumb') + '<div class="exinfo"><div class="row between"><b>' + T(e.name) + '</b>' + (sec ? '<span class="muted small">' + sec + ' ' + T('soniya') + '</span>' : '') + '</div>' +
+-      '<div class="muted small">' + T(e.desc) + '</div></div></div>' +
++      '<div class="muted small">' + T(e.desc) + '</div>' + exMeta(k) + '</div></div>' +
+       '<div class="vids"><button data-yt="' + esc(e.uz) + '">' + T("O'zbekcha video") + '</button><button data-yt="' + esc(e.ru) + '">' + T('Ruscha video') + '</button></div></div>';
+   }
+   function bindYt(root) {
+@@ -651,7 +656,7 @@
+         '<div class="dots">' + p.items.map(function (x, i) { return '<i class="' + (i < exIdx - (wait ? 0 : 1) ? 'd' : i === exIdx - 1 && !wait ? 'c' : '') + '"></i>'; }).join('') + '</div>' +
+         (wait ? '<div class="muted">' + T(s.ready ? 'Tayyorlaning' : 'Dam olish') + '</div><div class="tm rest">' + left + '</div><div class="muted">' + T(s.ready ? 'Birinchi mashq' : 'Keyingisi') + ':</div><div class="nm">' + T(e.name) + '</div>' + ExAnim.svg(key, 'big small-big' + (paused ? ' paused' : '')) +
+             '<button class="btn alt" style="margin-top:12px" id="plAdd">+20 ' + T('soniya') + '</button>'
+-          : '<div class="muted">' + exIdx + ' / ' + total + '</div><div class="nm">' + T(e.name) + '</div>' + ExAnim.svg(key, 'big' + (paused ? ' paused' : '')) + '<div class="tm">' + left + '</div><div class="muted small">' + T(e.desc) + '</div>') +
++          : '<div class="muted">' + exIdx + ' / ' + total + '</div><div class="nm">' + T(e.name) + '</div>' + ExAnim.svg(key, 'big' + (paused ? ' paused' : '')) + exMeta(key) + '<div class="tm">' + left + '</div><div class="muted small">' + T(e.desc) + '</div>') +
+         '<div class="vids" style="margin-top:14px"><button data-yt="' + esc(e.uz) + '">' + T("O'zbekcha video") + '</button><button data-yt="' + esc(e.ru) + '">' + T('Ruscha video') + '</button></div>' +
+         '<div class="grid2" style="margin-top:16px"><button class="btn ghost" id="plP">' + T(paused ? 'Davom etish' : 'Pauza') + '</button>' +
+         '<button class="btn alt" id="plN">' + T(wait ? "Hozir boshlash" : "O'tkazib yuborish") + '</button></div>' +
+--- a/app/src/main/assets/www/data.js
++++ b/app/src/main/assets/www/data.js
+@@ -147,3 +147,25 @@
+   { name: "Ruscha: uy mashqlari", note: "Rus tilida tushuntirish", q: "тренировка дома для начинающих 20 минут" },
+   { name: "O'zbekcha mashqlar", note: "O'zbek tilidagi videolar", q: "uyda sport mashqlari o'zbek tilida" }
+ ];
++
++// Mashq ma'lumotlari: daraja va ishlaydigan mushaklar (rasmda qizil bilan ko'rsatiladi)
++window.EX_META = {
++  jumping:  { level: 'easy', muscles: ['calves', 'shoulders', 'quads'] },
++  march:    { level: 'easy', muscles: ['quads', 'core'] },
++  squat:    { level: 'easy', muscles: ['quads', 'glutes', 'hamstrings'] },
++  lunge:    { level: 'mid',  muscles: ['quads', 'glutes', 'hamstrings'] },
++  pushup:   { level: 'mid',  muscles: ['chest', 'triceps', 'shoulders'] },
++  kneepush: { level: 'easy', muscles: ['chest', 'triceps', 'shoulders'] },
++  plank:    { level: 'easy', muscles: ['core', 'shoulders'] },
++  crunch:   { level: 'easy', muscles: ['core'] },
++  legraise: { level: 'mid',  muscles: ['core', 'quads'] },
++  bridge:   { level: 'easy', muscles: ['glutes', 'hamstrings', 'back'] },
++  climber:  { level: 'mid',  muscles: ['core', 'shoulders', 'quads'] },
++  burpee:   { level: 'hard', muscles: ['chest', 'quads', 'core', 'shoulders'] },
++  wallsit:  { level: 'mid',  muscles: ['quads', 'glutes'] },
++  stretch:  { level: 'easy', muscles: ['back', 'shoulders', 'obliques'] },
++  sideplank:{ level: 'mid',  muscles: ['obliques', 'core', 'shoulders'] }
++};
++window.MUSCLE_NAMES = { quads: "Son old mushagi", hamstrings: "Son orqa mushagi", glutes: "Dumba", calves: "Boldir",
++  chest: "Ko'krak", core: "Qorin", obliques: "Yon qorin", back: "Bel va orqa", shoulders: "Yelka", triceps: "Triceps", biceps: "Biceps" };
++window.LEVEL_NAMES = { easy: 'Oson', mid: "O'rta", hard: 'Qiyin' };
+--- a/app/src/main/assets/www/style.css
++++ b/app/src/main/assets/www/style.css
+@@ -141,3 +141,32 @@
+ .exframes.thumb { width: 72px; height: 72px; }
+ .exframes.big { width: min(260px, 70vw); aspect-ratio: 1; margin: 10px auto 0; }
+ .exframes.small-big { width: min(170px, 46vw); }
++
++/* Avatar Renderer V2 */
++svg.exanim.av2 line { stroke-linecap: round; }
++svg.exanim.av2 .o { stroke: #334155; }
++svg.exanim.av2 .skin { stroke: #ffd6b0; }
++svg.exanim.av2 .skin.far { stroke: #f2bf94; }
++svg.exanim.av2 .shirt { stroke: #0f9d6b; }
++svg.exanim.av2 .shirt.far { stroke: #0b7f56; }
++svg.exanim.av2 .shorts { stroke: #3a7be8; }
++svg.exanim.av2 .shorts.far { stroke: #2c63c2; }
++svg.exanim.av2 .shoe { stroke: #475569; }
++svg.exanim.av2 .shoe.far { stroke: #334155; }
++svg.exanim.av2.front .skin.far { stroke: #ffd6b0; }
++svg.exanim.av2.front .shorts.far { stroke: #3a7be8; }
++svg.exanim.av2.front .shirt.far { stroke: #0f9d6b; }
++svg.exanim.av2 .o.far { stroke: #3d4b5f; }
++svg.exanim.av2 .hdc { fill: #ffd6b0; stroke: #334155; stroke-width: 2.4; }
++svg.exanim.av2 .hair { fill: #3b2a20; }
++svg.exanim.av2 .eye { fill: #1f2937; }
++svg.exanim.av2 .cheek { fill: #ff9f9f; opacity: .55; }
++svg.exanim.av2 .smile { fill: none; stroke: #1f2937; stroke-width: 1.8; stroke-linecap: round; }
++svg.exanim.av2 .shadow { fill: #0f9d6b; opacity: .12; }
++svg.exanim.av2 .mus { stroke: #ff3b2f; opacity: .7; animation: musp 1.6s ease-in-out infinite; }
++svg.exanim.av2.paused .mus { animation-play-state: paused; }
++@keyframes musp { 0%, 100% { opacity: .45; } 50% { opacity: .9; } }
++.exmeta { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 8px 0 2px; }
++.ex .exmeta { justify-content: flex-start; margin: 6px 0 0; }
++.exmeta span { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #fff0ec; color: #c2410c; }
++.exmeta span.lv { background: var(--brand-2); color: var(--brand); font-weight: 600; }
